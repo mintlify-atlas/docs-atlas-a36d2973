@@ -1,0 +1,86 @@
+{
+  "projectType": "saas",
+  "projectName": "Algomind",
+  "projectDescription": "Spaced repetition study tool for software engineers to master LeetCode problems and algorithm concepts",
+  "theme": "palm",
+  "primaryColor": "#6366f1",
+  "lightColor": "#818cf8",
+  "darkColor": "#4f46e5",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": ["introduction", "quickstart", "architecture"]
+          },
+          {
+            "group": "Core Features",
+            "pages": [
+              "features/spaced-repetition",
+              "features/leetcode-autofetch",
+              "features/concept-library",
+              "features/dashboard-metrics"
+            ]
+          },
+          {
+            "group": "User Guide",
+            "pages": [
+              "guides/adding-problems",
+              "guides/reviewing-problems",
+              "guides/managing-concepts",
+              "guides/understanding-metrics"
+            ]
+          },
+          {
+            "group": "Development",
+            "pages": [
+              "development/local-setup",
+              "development/environment-variables",
+              "development/database-schema",
+              "development/deployment"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Authentication",
+            "pages": ["api/authentication"]
+          },
+          {
+            "group": "Endpoints",
+            "pages": [
+              "api/problems",
+              "api/concepts",
+              "api/reviews",
+              "api/metrics",
+              "api/leetcode-fetch"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "SM-2 spaced repetition algorithm with adaptive scheduling",
+    "LeetCode problem auto-fetch with title and difficulty",
+    "Concept library linking problems to algorithm topics",
+    "Dashboard with streak tracking and recall quality metrics",
+    "Full-stack architecture with Next.js and Go backend",
+    "Clerk authentication with Google OAuth support"
+  ],
+  "publicApiSurface": [
+    "POST /api/v1/problems - Create a new problem",
+    "GET /api/v1/concepts - List all algorithm concepts",
+    "GET /api/v1/reviews/queue - Get problems due for review",
+    "POST /api/v1/reviews/:entity_type/:entity_id/log - Log review result",
+    "GET /api/v1/leetcode/fetch - Fetch LeetCode problem metadata",
+    "GET /api/v1/metrics/dashboard - Get dashboard metrics",
+    "GET /api/v1/metrics/recall - Get recall quality over time",
+    "GET /api/v1/metrics/mastery - Get topic-level mastery stats"
+  ]
+}
