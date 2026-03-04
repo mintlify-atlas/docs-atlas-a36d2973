@@ -67,8 +67,10 @@
           {
             "group": "Endpoints",
             "pages": [
+              "api/user-profile",
               "api/problems",
               "api/concepts",
+              "api/concept-folders",
               "api/reviews",
               "api/metrics",
               "api/leetcode-fetch"

@@ -1,0 +1,55 @@
+---
+title: User profile
+description: Retrieve the authenticated user's profile information
+---
+
+## Get user profile
+
+Retrieve profile information for the authenticated user.
+
+<CodeGroup>
+```bash cURL
+curl -X GET https://api.algomind.app/api/v1/profile \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+</CodeGroup>
+
+### Response
+
+Returns the user's profile information including streak data.
+
+<ResponseField name="id" type="string">
+  The unique identifier for the user (from Clerk).
+</ResponseField>
+
+<ResponseField name="current_streak" type="integer">
+  Number of consecutive days with completed reviews.
+</ResponseField>
+
+<ResponseField name="longest_streak" type="integer">
+  The longest streak ever achieved by the user.
+</ResponseField>
+
+<ResponseField name="last_review_date" type="string">
+  ISO 8601 timestamp of the last review completion.
+</ResponseField>
+
+<ResponseField name="created_at" type="string">
+  ISO 8601 timestamp of when the user account was created.
+</ResponseField>
+
+<ResponseExample>
+```json Response
+{
+  "id": "user_2abc123xyz",
+  "current_streak": 7,
+  "longest_streak": 15,
+  "last_review_date": "2024-03-15T14:30:00Z",
+  "created_at": "2024-01-10T08:00:00Z"
+}
+```
+</ResponseExample>
+
+<Note>
+  User records are automatically created on first API request after authentication. Streak tracking begins from the first review.
+</Note>

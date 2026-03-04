@@ -251,3 +251,33 @@ Returns an array of concept mastery analytics, ordered by mastery score descendi
 <ResponseField name="500" type="Internal Server Error">
   Failed to fetch topic mastery data.
 </ResponseField>
+## Get most used language
+
+Retrieve the programming language you use most frequently in your problem solutions.
+
+<CodeGroup>
+```bash cURL
+curl -X GET https://api.algomind.app/api/v1/metrics/most-used-language \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+</CodeGroup>
+
+### Response
+
+Returns the most frequently used language across all your problem answers.
+
+<ResponseField name="language" type="string">
+  The programming language used most often (e.g., "Python", "JavaScript", "C++").
+</ResponseField>
+
+<ResponseExample>
+```json Response
+{
+  "language": "Python"
+}
+```
+</ResponseExample>
+
+<Info>
+  This endpoint is used to auto-populate the "Answer Language" dropdown when adding new problems.
+</Info>

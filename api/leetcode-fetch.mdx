@@ -96,3 +96,31 @@ curl -X GET "https://api.algomind.app/api/v1/leetcode/fetch?url=https://leetcode
 3. Use the returned `title`, `difficulty`, and `description` to pre-fill the Create problem form
 4. User adds their solution in the `answer` field
 5. Submit to the [Create problem](/api/problems) endpoint
+## Fetch from LeetCode directly
+
+Alternative endpoint that fetches directly from LeetCode's GraphQL API without going through the Alfa LeetCode API.
+
+<CodeGroup>
+```bash cURL
+curl -X GET "https://api.algomind.app/api/v1/leetcode/fetch/direct?url=https://leetcode.com/problems/two-sum/" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+</CodeGroup>
+
+### Query parameters
+
+<ParamField query="url" type="string" required>
+  The full LeetCode problem URL (e.g., `https://leetcode.com/problems/two-sum/`).
+</ParamField>
+
+### Response
+
+Returns the same problem metadata structure as the standard fetch endpoint, but retrieved directly from LeetCode's official GraphQL API.
+
+<Info>
+  This endpoint is used as a fallback when the Alfa LeetCode API is unavailable or rate-limited. It may be slower but is more reliable.
+</Info>
+
+<Warning>
+  Direct fetching may be subject to LeetCode's rate limits. Use the standard `/leetcode/fetch` endpoint first, which implements caching and fallback logic.
+</Warning>

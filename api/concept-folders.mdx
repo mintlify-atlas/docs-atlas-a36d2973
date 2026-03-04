@@ -1,0 +1,189 @@
+---
+title: Concept folders
+description: Organize concepts into hierarchical folders for better structure
+---
+
+## List folders
+
+Retrieve all concept folders for the authenticated user.
+
+<CodeGroup>
+```bash cURL
+curl -X GET https://api.algomind.app/api/v1/concept-folders \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+</CodeGroup>
+
+### Response
+
+Returns an array of folder objects with their associated concepts.
+
+<ResponseField name="id" type="integer">
+  The unique identifier of the folder.
+</ResponseField>
+
+<ResponseField name="user_id" type="string">
+  The ID of the user who owns this folder.
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  The name of the folder.
+</ResponseField>
+
+<ResponseField name="parent_folder_id" type="integer | null">
+  The ID of the parent folder, or null for root-level folders.
+</ResponseField>
+
+<ResponseField name="sort_order" type="integer">
+  Display order of the folder (lower numbers appear first).
+</ResponseField>
+
+## Create folder
+
+Create a new concept folder.
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api.algomind.app/api/v1/concept-folders \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Graph Algorithms",
+    "parent_folder_id": null,
+    "sort_order": 1
+  }'
+```
+</CodeGroup>
+
+### Request body
+
+<ParamField body="name" type="string" required>
+  The name of the folder.
+</ParamField>
+
+<ParamField body="parent_folder_id" type="integer">
+  The ID of the parent folder for nested organization. Omit or set to null for root-level folders.
+</ParamField>
+
+<ParamField body="sort_order" type="integer">
+  Display order (default: 0). Lower numbers appear first.
+</ParamField>
+
+### Response
+
+Returns the created folder object with a 201 status code.
+
+## Update folder
+
+Update an existing folder's name, parent, or sort order.
+
+<CodeGroup>
+```bash cURL
+curl -X PUT https://api.algomind.app/api/v1/concept-folders/5 \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Advanced Graph Theory",
+    "sort_order": 2
+  }'
+```
+</CodeGroup>
+
+### Path parameters
+
+<ParamField path="id" type="integer" required>
+  The ID of the folder to update.
+</ParamField>
+
+### Request body
+
+Same fields as create folder endpoint (all optional for updates).
+
+### Response
+
+Returns the updated folder object.
+
+## Delete folder
+
+Delete a concept folder. Concepts inside are not deleted, just unassigned.
+
+<CodeGroup>
+```bash cURL
+curl -X DELETE https://api.algomind.app/api/v1/concept-folders/5 \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+</CodeGroup>
+
+### Path parameters
+
+<ParamField path="id" type="integer" required>
+  The ID of the folder to delete.
+</ParamField>
+
+### Response
+
+Returns 204 No Content on success.
+
+<Warning>
+  Child folders and concepts are not deleted, only the folder itself. You may want to reassign concepts before deleting.
+</Warning>
+
+## Assign concept to folder
+
+Add a concept to a folder.
+
+<CodeGroup>
+```bash cURL
+curl -X PUT https://api.algomind.app/api/v1/concept-folder-items \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "concept_id": 15,
+    "folder_id": 5,
+    "sort_order": 3
+  }'
+```
+</CodeGroup>
+
+### Request body
+
+<ParamField body="concept_id" type="integer" required>
+  The ID of the concept to add to the folder.
+</ParamField>
+
+<ParamField body="folder_id" type="integer" required>
+  The ID of the folder.
+</ParamField>
+
+<ParamField body="sort_order" type="integer">
+  Display order within the folder (default: 0).
+</ParamField>
+
+### Response
+
+Returns 200 OK on success.
+
+## Remove concept from folder
+
+Remove a concept from its folder.
+
+<CodeGroup>
+```bash cURL
+curl -X DELETE https://api.algomind.app/api/v1/concept-folder-items/15 \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+</CodeGroup>
+
+### Path parameters
+
+<ParamField path="concept_id" type="integer" required>
+  The ID of the concept to remove from its folder.
+</ParamField>
+
+### Response
+
+Returns 204 No Content on success.
+
+<Info>
+  Removing a concept from a folder does not delete the concept itself, it just unassigns it from the folder.
+</Info>

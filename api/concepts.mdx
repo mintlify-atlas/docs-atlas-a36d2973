@@ -95,3 +95,130 @@ Returns an array of concept objects sorted by title in ascending order.
 <ResponseField name="500" type="Internal Server Error">
   Failed to fetch concepts from the database.
 </ResponseField>
+## Create concept
+
+Create a new custom concept for the authenticated user.
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api.algomind.app/api/v1/concepts \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Backtracking",
+    "description": "Exploring all possible solutions",
+    "content": "Backtracking is an algorithmic technique..."
+  }'
+```
+</CodeGroup>
+
+### Request body
+
+<ParamField body="title" type="string" required>
+  The title of the concept.
+</ParamField>
+
+<ParamField body="description" type="string">
+  Optional description of the concept.
+</ParamField>
+
+<ParamField body="content" type="string" required>
+  The full content/explanation of the concept in markdown format.
+</ParamField>
+
+### Response
+
+Returns the created concept object with a 201 status code.
+
+<ResponseField name="id" type="integer">
+  The unique identifier of the created concept.
+</ResponseField>
+
+<ResponseField name="user_id" type="string">
+  The ID of the user who created this concept.
+</ResponseField>
+
+<ResponseField name="title" type="string">
+  The title of the concept.
+</ResponseField>
+
+## Update concept
+
+Update an existing concept. Only concepts you created can be updated.
+
+<CodeGroup>
+```bash cURL
+curl -X PUT https://api.algomind.app/api/v1/concepts/42 \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Advanced Backtracking",
+    "description": "Updated description",
+    "content": "Updated content..."
+  }'
+```
+</CodeGroup>
+
+### Path parameters
+
+<ParamField path="id" type="integer" required>
+  The ID of the concept to update.
+</ParamField>
+
+### Request body
+
+Same fields as create concept endpoint.
+
+### Response
+
+Returns the updated concept object with a 200 status code.
+
+## Delete concept
+
+Delete a concept you created. System concepts cannot be deleted.
+
+<CodeGroup>
+```bash cURL
+curl -X DELETE https://api.algomind.app/api/v1/concepts/42 \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+</CodeGroup>
+
+### Path parameters
+
+<ParamField path="id" type="integer" required>
+  The ID of the concept to delete.
+</ParamField>
+
+### Response
+
+Returns 204 No Content on success.
+
+<Note>
+  Deleting a concept also deletes its review state if it exists.
+</Note>
+
+## Reset concept
+
+Reset a user override back to the system concept.
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api.algomind.app/api/v1/concepts/42/reset \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+</CodeGroup>
+
+### Path parameters
+
+<ParamField path="id" type="integer" required>
+  The ID of the concept override to reset.
+</ParamField>
+
+### Response
+
+Returns 200 OK with a success message when the override is deleted and you revert to the system concept.
+
+<Warning>
+  This only works on concept overrides (where base_concept_id is not null). It cannot reset system concepts.
+</Warning>

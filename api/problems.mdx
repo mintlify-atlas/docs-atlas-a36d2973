@@ -111,3 +111,112 @@ curl -X POST https://api.algomind.app/api/v1/problems \
 <ResponseField name="500" type="Internal Server Error">
   Failed to create problem or review state.
 </ResponseField>
+## Get all problems
+
+Retrieve all problems created by the authenticated user.
+
+<CodeGroup>
+```bash cURL
+curl -X GET https://api.algomind.app/api/v1/problems \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+</CodeGroup>
+
+### Response
+
+Returns an array of problem objects.
+
+<ResponseField name="id" type="integer">
+  The unique identifier of the problem.
+</ResponseField>
+
+<ResponseField name="user_id" type="string">
+  The ID of the user who created the problem.
+</ResponseField>
+
+<ResponseField name="concept_id" type="integer">
+  The ID of the associated concept.
+</ResponseField>
+
+<ResponseField name="title" type="string">
+  The title of the problem.
+</ResponseField>
+
+<ResponseField name="difficulty" type="string">
+  Problem difficulty: EASY, MEDIUM, or HARD.
+</ResponseField>
+
+<ResponseField name="summary" type="string">
+  Brief summary of the problem.
+</ResponseField>
+
+<ResponseField name="answer" type="string">
+  Your solution to the problem.
+</ResponseField>
+
+## Get problem by ID
+
+Retrieve a specific problem by its ID.
+
+<CodeGroup>
+```bash cURL
+curl -X GET https://api.algomind.app/api/v1/problems/123 \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+</CodeGroup>
+
+### Path parameters
+
+<ParamField path="problem_id" type="integer" required>
+  The ID of the problem to retrieve.
+</ParamField>
+
+### Response
+
+Returns a single problem object with the same fields as the create response.
+
+## Delete problem
+
+Delete a problem you created.
+
+<CodeGroup>
+```bash cURL
+curl -X DELETE https://api.algomind.app/api/v1/problems/123 \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+</CodeGroup>
+
+### Path parameters
+
+<ParamField path="problem_id" type="integer" required>
+  The ID of the problem to delete.
+</ParamField>
+
+### Response
+
+Returns 204 No Content on success.
+
+<Warning>
+  Deleting a problem also deletes its review state and review logs.
+</Warning>
+
+## Add problem to review queue
+
+Manually add a problem back to your review queue.
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api.algomind.app/api/v1/problems/add-to-review-queue/123 \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+</CodeGroup>
+
+### Path parameters
+
+<ParamField path="problem_id" type="integer" required>
+  The ID of the problem to add to the review queue.
+</ParamField>
+
+### Response
+
+Returns 200 OK with a success message. The problem's next review date is set to now, making it immediately reviewable.
