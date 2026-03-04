@@ -1,0 +1,566 @@
+---
+title: Architecture
+description: Deep dive into Algomind's system architecture, tech stack, and implementation details
+---
+
+Algomind is built as a modern web application with separate frontend and backend services. This page provides a comprehensive overview of the architecture, data flow, and key implementation details.
+
+## System overview
+
+The project is split into two separate services that communicate via REST API:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                         Frontend                             │
+│  Next.js 15 + Clerk Auth + TanStack Query + shadcn/ui      │
+└─────────────────┬───────────────────────────────────────────┘
+                  │ HTTP + JWT
+                  │
+┌─────────────────▼───────────────────────────────────────────┐
+│                         Backend                              │
+│         Go Echo + Clerk SDK + zerolog + pgx                 │
+└─────────────────┬───────────────────────────────────────────┘
+                  │ SQL
+                  │
+┌─────────────────▼───────────────────────────────────────────┐
+│                       PostgreSQL 15                          │
+│    users | concepts | problems | review_states | logs       │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## Frontend architecture
+
+The frontend is built with **Next.js 15** using the App Router and deployed as a standalone Docker container.
+
+### Framework and routing
+
+- **Framework**: Next.js 15 (App Router) with `output: "standalone"` for Docker deployment
+- **Dashboard pages**: Located under `/dashboard` with a shared sidebar layout
+- **Auth pages**: Under `/(auth)` with a split-screen layout
+
+From `next.config.ts`:
+
+```typescript
+const nextConfig: NextConfig = {
+  output: "standalone",
+  
+  experimental: {
+    optimizePackageImports: [
+      "lucide-react",
+      "@radix-ui/react-icons",
+      "@tabler/icons-react",
+      "recharts",
+    ],
+  },
+};
+```
+
+### Authentication
+
+**Clerk** handles all authentication, session management, and Google OAuth. The app uses custom sign-in/sign-up UI built with Clerk hooks (`useSignIn`, `useSignUp`) instead of the default Clerk components, with inline OTP verification on sign-up.
+
+<Info>
+  Clerk automatically manages session tokens and refresh logic. The frontend includes the JWT token in the `Authorization` header for all API requests.
+</Info>
+
+### Data fetching
+
+**TanStack Query** (React Query) is used for all server state management. All queries go through a shared `useAuthQuery` hook that gates requests behind Clerk's authentication state.
+
+From `features/useAuthQuery.ts`:
+
+```typescript
+import { useQuery, UseQueryOptions } from '@tanstack/react-query'
+import { useAuth } from '@clerk/nextjs'
+
+export function useAuthQuery<T>(options: UseQueryOptions<T>) {
+    const { isLoaded, isSignedIn } = useAuth()
+
+    return useQuery({
+        ...options,
+        enabled: isLoaded && isSignedIn && options.enabled !== false,
+    })
+}
+```
+
+**Cache configuration**:
+- **Concepts**: Cached for 10 minutes
+- **Dashboard metrics**: Cached for 2 minutes
+- **Prefix-based invalidation**: After mutations (e.g., adding a problem invalidates all `problems-*` queries)
+
+### UI components
+
+- **Component library**: shadcn/ui with Radix UI primitives
+- **Styling**: Tailwind CSS v4
+- **Theme**: Dark mode support via `next-themes`
+- **Charts**: Recharts for dashboard metrics visualization
+
+## Backend architecture
+
+The backend is a RESTful API built with **Go** and the **Echo v4** framework.
+
+### Framework and structure
+
+From `cmd/api/main.go`:
+
+```go
+func main() {
+	cfg := config.Load()
+	db := mustInitDb(cfg.DatabaseURL)
+	defer db.Close()
+
+	srv := server.NewServer(cfg)
+	server.RegisterRoutes(srv.Echo, db)
+	if err := srv.Start(); err != nil {
+		log.Fatal("Server failed to start:", err)
+	}
+}
+```
+
+### Authentication middleware
+
+**Clerk Go SDK** verifies JWT tokens in a middleware applied to all `/api/v1` routes. Each request extracts the Clerk user ID from the session claims.
+
+From `internal/middleware/auth.go`:
+
+```go
+func (am *AuthMiddleware) RequireAuth(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		authHeader := c.Request().Header.Get("Authorization")
+		token := strings.TrimPrefix(authHeader, "Bearer ")
+
+		if token == "" {
+			return c.JSON(http.StatusUnauthorized, 
+				map[string]string{"error": "Missing Authorization header"})
+		}
+
+		claims, err := jwt.Verify(c.Request().Context(), &jwt.VerifyParams{
+			Token: token,
+		})
+
+		if err != nil {
+			return c.JSON(http.StatusUnauthorized, 
+				map[string]string{"error": "Invalid Session"})
+		}
+
+		if err := am.ensureUserExists(c, claims.Subject); err != nil {
+			return err
+		}
+
+		c.Set("user_id", claims.Subject)
+		return next(c)
+	}
+}
+```
+
+<Note>
+  The middleware automatically creates user records on first login using `INSERT ... ON CONFLICT DO NOTHING`, syncing Clerk users to the database.
+</Note>
+
+### API routes
+
+From `internal/server/routes.go`:
+
+```
+GET  /health
+
+POST /api/v1/problems
+GET  /api/v1/problems
+GET  /api/v1/problems/:problem_id
+DELETE /api/v1/problems/:problem_id
+
+GET  /api/v1/concepts
+POST /api/v1/concepts
+PUT  /api/v1/concepts/:id
+DELETE /api/v1/concepts/:id
+
+GET  /api/v1/reviews/queue
+POST /api/v1/reviews/:entity_type/:entity_id/log
+
+GET  /api/v1/leetcode/fetch
+GET  /api/v1/metrics/dashboard
+GET  /api/v1/metrics/recall
+GET  /api/v1/metrics/mastery
+```
+
+All routes under `/api/v1` require a valid Clerk session token in the `Authorization` header.
+
+### Spaced repetition algorithm
+
+Algomind uses a variant of the **SM-2 algorithm** to calculate review intervals. The implementation lives in `internal/srs/algo.go`:
+
+```go
+func CalculateReview(rating string, currentInterval int, 
+                     currentEase float64, currentStreak int) ReviewResult {
+	var newInterval int
+	var newEase = currentEase
+	var newStreak = currentStreak
+
+	switch rating {
+	case "AGAIN":
+		newInterval = 0
+		newStreak = 0
+		newEase = math.Max(1.3, currentEase-0.20)
+
+	case "HARD":
+		newInterval = int(float64(currentInterval) * 1.2)
+		if newInterval == 0 {
+			newInterval = 1
+		}
+		newEase = math.Max(1.3, currentEase-0.15)
+		newStreak++
+
+	case "GOOD":
+		newInterval = int(float64(currentInterval) * currentEase)
+		if newInterval == 0 {
+			newInterval = 1
+		}
+		newStreak++
+
+	case "EASY":
+		newInterval = int(float64(currentInterval) * currentEase * 1.3)
+		if newInterval == 0 {
+			newInterval = 4
+		}
+		newEase += 0.15
+		newStreak++
+	}
+
+	nextReview := time.Now().AddDate(0, 0, newInterval)
+
+	return ReviewResult{
+		NextReviewAt: nextReview,
+		IntervalDays: newInterval,
+		EaseFactor:   newEase,
+		Streak:       newStreak,
+	}
+}
+```
+
+**Key behaviors**:
+- **AGAIN**: Resets interval to 0 (review immediately), resets streak, decreases ease by 0.20
+- **HARD**: Multiplies interval by 1.2, decreases ease by 0.15
+- **GOOD**: Multiplies interval by current ease factor
+- **EASY**: Multiplies interval by ease × 1.3, increases ease by 0.15
+
+### Logging
+
+**zerolog** is used for structured JSON logs throughout the backend:
+
+```go
+log.Info().Str("user_id", userID).Msg("User created")
+log.Error().Err(err).Msg("Database query failed")
+```
+
+## Database schema
+
+PostgreSQL 15 stores all application data. The schema is managed with **golang-migrate**.
+
+From `migrations/000001_init_schema.up.sql`:
+
+### Tables
+
+<Accordion title="users — Auth-owned user records">
+  ```sql
+  CREATE TABLE users (
+      id TEXT PRIMARY KEY,          -- Clerk user ID
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  );
+  ```
+
+  Synced from Clerk on first login. Stores streak data (added in migration `000003`).
+</Accordion>
+
+<Accordion title="concepts — Algorithm/DS theory">
+  ```sql
+  CREATE TABLE concepts (
+      id BIGSERIAL PRIMARY KEY,
+      title TEXT NOT NULL UNIQUE,
+      description TEXT,
+      content TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  );
+  ```
+
+  Global algorithm and data structure concepts (e.g., Sliding Window, Dynamic Programming). Admin-managed.
+</Accordion>
+
+<Accordion title="problems — User-added practice problems">
+  ```sql
+  CREATE TABLE problems (
+      id BIGSERIAL PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      concept_id BIGINT NOT NULL REFERENCES concepts(id) ON DELETE CASCADE,
+
+      title TEXT NOT NULL,
+      link TEXT,
+      difficulty TEXT NOT NULL CHECK (difficulty IN ('EASY', 'MEDIUM', 'HARD')),
+
+      summary TEXT NOT NULL,
+      description TEXT,
+      answer TEXT NOT NULL,
+      hints TEXT,
+
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  );
+  ```
+
+  Each problem is linked to a user and a concept. LeetCode URL is stored in `link`.
+</Accordion>
+
+<Accordion title="review_states — Spaced repetition state">
+  ```sql
+  CREATE TABLE review_states (
+      id BIGSERIAL PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+
+      entity_type TEXT NOT NULL CHECK (entity_type IN ('concept', 'problem')),
+      entity_id BIGINT NOT NULL,
+
+      next_review_at TIMESTAMPTZ NOT NULL,
+      interval_days INT NOT NULL,
+      ease_factor FLOAT NOT NULL,
+      streak INT NOT NULL,
+
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+      UNIQUE (user_id, entity_type, entity_id)
+  );
+  ```
+
+  Stores the current SRS state for each problem or concept per user.
+</Accordion>
+
+<Accordion title="review_logs — Full review history">
+  ```sql
+  CREATE TABLE review_logs (
+      id BIGSERIAL PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+
+      entity_type TEXT NOT NULL CHECK (entity_type IN ('concept', 'problem')),
+      entity_id BIGINT NOT NULL,
+
+      rating TEXT NOT NULL CHECK (rating IN ('AGAIN', 'HARD', 'GOOD', 'EASY')),
+      reviewed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  );
+  ```
+
+  Full history of every review session. Used for metrics and heatmaps.
+</Accordion>
+
+### Indexes
+
+From `migrations/000004_add_performance_indexes.up.sql`:
+
+```sql
+CREATE INDEX idx_review_states_due
+    ON review_states (user_id, next_review_at);
+
+CREATE INDEX idx_review_logs_user_time
+    ON review_logs (user_id, reviewed_at);
+
+CREATE INDEX idx_problems_user
+    ON problems(user_id);
+
+CREATE INDEX idx_problems_concept
+    ON problems(concept_id);
+```
+
+<Tip>
+  The `idx_review_states_due` index is critical for fast queue queries. It allows the backend to efficiently find all problems due for review for a given user.
+</Tip>
+
+## Deployment
+
+Both services are containerized using Docker multi-stage builds.
+
+### Backend Dockerfile
+
+From `algomind-backend/Dockerfile`:
+
+```dockerfile
+# ---- Build Stage ----
+FROM golang:1.24-alpine AS builder
+
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o server ./cmd/api/main.go
+
+# ---- Runtime Stage ----
+FROM alpine:3.19
+
+WORKDIR /app
+COPY --from=builder /app/server .
+COPY --from=migrate /usr/local/bin/migrate /usr/local/bin/migrate
+COPY migrations ./migrations
+COPY entrypoint.sh .
+RUN chmod +x entrypoint.sh
+
+EXPOSE 8080
+ENTRYPOINT ["./entrypoint.sh"]
+```
+
+### Automatic migrations
+
+The backend `entrypoint.sh` runs migrations before starting the server on every deploy:
+
+```bash
+#!/bin/sh
+set -e
+
+echo "Running database migrations..."
+migrate -path /app/migrations -database "$DATABASE_URL" up
+echo "Migrations complete."
+
+exec ./server
+```
+
+<Warning>
+  Schema changes are applied automatically on every deploy. Make sure migrations are backward-compatible or coordinate with frontend deployments.
+</Warning>
+
+### Production deployment
+
+Algomind is deployed on a Linux VPS using **[Dokploy](https://dokploy.com)**, which handles:
+
+- Docker builds from Git
+- Traefik reverse proxying
+- Let's Encrypt SSL certificates
+- Environment variable injection
+
+**Frontend environment variables** (baked into the bundle at build time):
+
+```
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+NEXT_PUBLIC_SITE_URL
+NEXT_PUBLIC_CLERK_SIGN_IN_URL
+NEXT_PUBLIC_CLERK_SIGN_UP_URL
+NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL
+NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL
+```
+
+**Backend environment variables** (runtime):
+
+```
+DATABASE_URL
+CLERK_SECRET_KEY
+PORT
+```
+
+## Data flow example
+
+Here's how a typical review flow works:
+
+<Steps>
+  <Step title="User clicks 'Review' on a problem">
+    Frontend sends `POST /api/v1/reviews/problem/123/log` with rating (AGAIN/HARD/GOOD/EASY) and Clerk JWT token.
+  </Step>
+
+  <Step title="Backend verifies auth">
+    The `RequireAuth` middleware verifies the JWT and extracts the user ID.
+  </Step>
+
+  <Step title="Backend calculates next review">
+    The `CalculateReview` function in `internal/srs/algo.go` computes the new interval, ease factor, and streak based on the rating.
+  </Step>
+
+  <Step title="Backend updates database">
+    Two writes:
+    - `INSERT` into `review_logs` (history)
+    - `UPDATE` on `review_states` (next review date)
+  </Step>
+
+  <Step title="Frontend invalidates cache">
+    TanStack Query invalidates `reviews-queue` and `dashboard-*` queries, triggering automatic refetch.
+  </Step>
+
+  <Step title="UI updates">
+    The review queue shrinks, dashboard metrics update, and the user sees the next problem.
+  </Step>
+</Steps>
+
+## Code structure
+
+### Backend
+
+```
+algomind-backend/
+├── cmd/api/
+│   └── main.go              # Entry point
+├── internal/
+│   ├── config/              # Environment config
+│   ├── database/            # PostgreSQL connection
+│   ├── handlers/            # HTTP handlers
+│   ├── middleware/          # Auth middleware
+│   ├── models/              # Domain models
+│   ├── srs/                 # Spaced repetition algorithm
+│   └── server/              # Server setup and routes
+├── migrations/              # Database migrations
+└── entrypoint.sh            # Docker entrypoint
+```
+
+### Frontend
+
+```
+algomind-frontend/
+├── app/
+│   ├── (auth)/              # Auth pages (sign-in, sign-up)
+│   ├── dashboard/           # Dashboard pages
+│   └── layout.tsx           # Root layout
+├── features/
+│   ├── dashboard/           # Dashboard hooks and components
+│   ├── library/             # Problem library
+│   ├── review/              # Review flow
+│   └── useAuthQuery.ts      # Shared auth query hook
+├── components/              # Shared UI components
+├── lib/                     # Utilities and API client
+└── next.config.ts           # Next.js config
+```
+
+## Performance considerations
+
+<CardGroup cols={2}>
+  <Card title="Database indexes" icon="database">
+    Critical indexes on `review_states(user_id, next_review_at)` and `review_logs(user_id, reviewed_at)` ensure fast queries even with thousands of problems.
+  </Card>
+
+  <Card title="TanStack Query cache" icon="clock">
+    Intelligent cache durations (10min for concepts, 2min for metrics) reduce unnecessary API calls while keeping data fresh.
+  </Card>
+
+  <Card title="Next.js optimization" icon="gauge">
+    Tree-shaking icon libraries with `optimizePackageImports` reduces bundle size by 30%+.
+  </Card>
+
+  <Card title="Standalone output" icon="docker">
+    Next.js standalone mode produces minimal Docker images (~200MB) with only runtime dependencies.
+  </Card>
+</CardGroup>
+
+## Security
+
+- **Authentication**: Clerk handles all auth, session management, and token refresh
+- **Authorization**: Every API route verifies JWT and extracts user ID from claims
+- **SQL injection**: All queries use parameterized statements via pgx
+- **CORS**: Backend only allows requests from the configured frontend origin
+- **Secrets**: Environment variables injected at runtime, never committed to Git
+
+<Info>
+  Clerk's JWT verification happens on every request, ensuring tokens can't be forged or reused after expiration.
+</Info>
+
+## Next steps
+
+Now that you understand the architecture:
+
+- Explore the spaced repetition algorithm in `internal/srs/algo.go`
+- Read the migration files to understand schema evolution
+- Check out the frontend hooks in `features/` to see how data flows
+- Try adding a new API endpoint and wiring it up to the frontend
+
+<Tip>
+  The best way to learn the codebase is to add a feature. Try implementing a "pause review" button that skips a problem without affecting its SRS state.
+</Tip>

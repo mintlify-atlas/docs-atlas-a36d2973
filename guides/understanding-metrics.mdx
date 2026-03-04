@@ -1,0 +1,401 @@
+---
+title: Understanding metrics
+description: Interpreting dashboard metrics to track learning progress and improve retention
+---
+
+Algomind tracks multiple metrics to help you understand your learning patterns, identify weak areas, and stay motivated through consistent practice.
+
+## Dashboard overview
+
+Your dashboard displays five key summary metrics, all pulled from a single optimized query.
+
+<Accordion title="API details">
+  Dashboard metrics are fetched via:
+  ```
+  GET /metrics/dashboard
+  ```
+
+  Returns a `DashboardSummary` object:
+  ```typescript
+  {
+    due_count: number        // Problems/concepts due now
+    current_streak: number   // Consecutive days reviewed
+    longest_streak: number   // Best streak achieved
+    reviews_today: number    // Reviews completed today
+    total_problems: number   // Total problems in library
+  }
+  ```
+
+  This uses a single SQL query with subqueries for performance, cached for 2 minutes.
+</Accordion>
+
+## Review queue count
+
+Shows how many items (problems and concepts) are due for review right now.
+
+### What counts as "due"
+
+An item is due when:
+```sql
+next_review_at <= NOW()
+```
+
+This includes:
+- Newly added problems (scheduled for immediate review)
+- Items that reached their scheduled review date
+- Concepts reset by failing problems
+
+<Info>
+  The queue is limited to 50 items per session. If you have more due reviews, complete the first batch and refresh to load the next 50.
+</Info>
+
+### How to use this metric
+
+<CardGroup cols={2}>
+  <Card title="Daily goal" icon="bullseye">
+    Aim to clear your due count to zero each day. This ensures consistent spaced repetition.
+  </Card>
+
+  <Card title="Backlog indicator" icon="triangle-exclamation">
+    A high due count (>20) suggests you've fallen behind. Focus on clearing reviews before adding new problems.
+  </Card>
+</CardGroup>
+
+## Streak calculation
+
+Streaks track consecutive days of reviewing problems. Two streak values are shown:
+
+### Current streak
+
+Your ongoing streak, updated with each review:
+
+```typescript
+current_streak = 
+  if last_review_date == today:
+    current_streak (unchanged)
+  else if last_review_date == yesterday:
+    current_streak + 1
+  else:
+    1 (reset)
+```
+
+<Warning>
+  Streaks are based on **any review activity**, not clearing the full queue. Even one review maintains your streak.
+</Warning>
+
+### Longest streak
+
+The best streak you've ever achieved:
+
+```sql
+longest_streak = MAX(longest_streak, current_streak)
+```
+
+This value only increases, serving as a personal best to beat.
+
+### Streak strategy
+
+<Steps>
+  <Step title="Review daily">
+    Make at least one review every day to maintain your streak. Even on busy days, a single review keeps momentum.
+  </Step>
+
+  <Step title="Use streaks as motivation">
+    Gamify your learning by trying to beat your longest streak. Consistency matters more than volume.
+  </Step>
+
+  <Step title="Don't stress missed days">
+    Streaks reset but your knowledge doesn't. Focus on long-term retention over perfect streaks.
+  </Step>
+</Steps>
+
+<Info>
+  The `last_review_date` is stored in the `users` table and updates to `CURRENT_DATE` whenever you log a review (via `POST /reviews/problem/{id}/log`).
+</Info>
+
+## Reviews today
+
+Counts how many reviews you've completed since midnight.
+
+### Query logic
+
+```sql
+SELECT COUNT(*) FROM review_logs
+WHERE user_id = $1
+  AND reviewed_at >= CURRENT_DATE
+  AND reviewed_at < CURRENT_DATE + INTERVAL '1 day'
+```
+
+This counts all logged reviews (problems and concepts) for the current calendar day.
+
+### How to interpret
+
+- **Low count (0-5)**: Just getting started or light review day
+- **Moderate (5-20)**: Solid daily practice
+- **High (20+)**: Clearing backlog or intensive study session
+
+<Tip>
+  Combine this with your due count. If you've done 15 reviews but still have 20 due, you're making progress but not caught up yet.
+</Tip>
+
+## Total problems
+
+The total number of problems you've added to your library.
+
+```sql
+SELECT COUNT(*) FROM problems WHERE user_id = $1
+```
+
+### Growth over time
+
+This metric grows as you:
+- Import problems from LeetCode
+- Add custom problems manually
+- Build out your practice library
+
+<CardGroup cols={2}>
+  <Card title="Breadth indicator" icon="books">
+    More problems mean broader pattern coverage. Aim for diversity across different concepts.
+  </Card>
+
+  <Card title="Avoid overload" icon="scale-balanced">
+    Adding too many problems too fast can overwhelm your review queue. Balance adding new content with mastering existing problems.
+  </Card>
+</CardGroup>
+
+## Recall quality trends
+
+Track your success rate over time to identify learning patterns.
+
+<Accordion title="API details">
+  Recall quality data is fetched via:
+  ```
+  GET /metrics/recall?days=7
+  ```
+
+  Returns an array of `RecallDataPoint` objects:
+  ```typescript
+  {
+    date: string              // YYYY-MM-DD
+    total_reviews: number     // Reviews that day
+    successful_reviews: number // Rated GOOD or EASY
+    recall_rate: number       // Percentage (0-100)
+  }
+  ```
+
+  Default is 7 days, but you can request up to 90 days of history.
+</Accordion>
+
+### Recall rate calculation
+
+```sql
+recall_rate = (successful_reviews / total_reviews) * 100
+```
+
+Where **successful reviews** are those rated:
+- `GOOD` (keyboard: 3)
+- `EASY` (keyboard: 4)
+
+Ratings of `AGAIN` or `HARD` are considered unsuccessful.
+
+### Reading the trends
+
+<CardGroup cols={2}>
+  <Card title="High recall (above 80%)" icon="chart-line-up">
+    You're mastering the material. Consider adding more challenging problems or reviewing less frequently.
+  </Card>
+
+  <Card title="Moderate recall (60-80%)" icon="chart-simple">
+    Healthy learning zone. You're being challenged but still retaining most information.
+  </Card>
+
+  <Card title="Low recall (below 60%)" icon="chart-line-down">
+    Material may be too difficult or reviews spaced too far apart. Focus on fundamentals and review more frequently.
+  </Card>
+
+  <Card title="Inconsistent" icon="chart-mixed">
+    Recall rate varies day-to-day. This is normal as you encounter different difficulty problems. Look for trends over weeks, not days.
+  </Card>
+</CardGroup>
+
+### Actionable insights
+
+- **Declining recall**: You may need to review concepts more frequently or add easier problems
+- **Improving recall**: Your spaced repetition is working; patterns are sticking
+- **Flat recall**: Consistent performance; maintain current study habits
+
+<Tip>
+  Use the `days` parameter to view longer trends. `?days=30` shows monthly patterns, which are more meaningful than daily fluctuations.
+</Tip>
+
+## Mastery scores by topic
+
+See how well you've mastered each concept with a composite mastery score.
+
+<Accordion title="API details">
+  Topic mastery is fetched via:
+  ```
+  GET /metrics/mastery
+  ```
+
+  Returns an array of `TopicMastery` objects:
+  ```typescript
+  {
+    concept_id: number
+    concept_title: string
+    problem_count: number      // Problems using this concept
+    avg_ease: number           // Average ease factor (0-3+)
+    avg_interval: number       // Average days between reviews
+    retention_rate: number     // Success rate percentage
+    mastery_score: number      // Composite score (0-100)
+  }
+  ```
+
+  Results are ordered by mastery score (highest first).
+</Accordion>
+
+### Mastery score formula
+
+The mastery score combines three weighted components:
+
+```typescript
+mastery_score = 
+  (retention_rate * 0.5) +        // 50% weight
+  (normalized_ease * 0.3) +       // 30% weight
+  (normalized_interval * 0.2)     // 20% weight
+```
+
+Where:
+- `normalized_ease = min(avg_ease, 3.0) / 3.0 * 100`
+- `normalized_interval = min(avg_interval, 30) / 30.0 * 100`
+
+<Info>
+  The formula caps ease at 3.0 and interval at 30 days for normalization. This prevents outliers from skewing scores.
+</Info>
+
+### Component metrics explained
+
+#### Average ease factor
+
+Ease factor (from SuperMemo SM-2) indicates confidence:
+
+- **< 1.5**: Low confidence, frequent failures
+- **1.5 - 2.0**: Building confidence
+- **2.0 - 2.5**: Moderate mastery (default starts at 2.5)
+- **> 2.5**: High confidence, consistently rating "Easy"
+
+Ease increases by 0.15 for "Easy" ratings and decreases by 0.15-0.2 for "Hard" or "Again."
+
+#### Average interval
+
+Days between reviews indicates retention strength:
+
+- **0-1 days**: New material or frequently failing
+- **2-7 days**: Early learning phase
+- **7-14 days**: Consolidating knowledge
+- **14-30 days**: Strong retention
+- **30+ days**: Mastered (capped at 30 for normalization)
+
+Longer intervals mean you're successfully recalling after extended periods.
+
+#### Retention rate
+
+Percentage of reviews rated "Good" or "Easy":
+
+```sql
+retention_rate = (successful_reviews / total_reviews) * 100
+```
+
+- **< 60%**: Struggling with this concept
+- **60-80%**: Healthy learning curve
+- **80%+**: Mastered or material is too easy
+
+### Using mastery scores
+
+<Steps>
+  <Step title="Identify weak concepts">
+    Concepts with low mastery scores (below 40) need more practice. Add more problems or review the concept content directly.
+  </Step>
+
+  <Step title="Celebrate strong areas">
+    High scores (above 80) indicate mastery. These concepts can be reviewed less frequently, freeing time for weak areas.
+  </Step>
+
+  <Step title="Balance your practice">
+    Don't only practice what you're good at. Allocate more time to low-score concepts to build well-rounded skills.
+  </Step>
+
+  <Step title="Track improvement">
+    Check mastery scores weekly. Gradual increases confirm your study methods are working.
+  </Step>
+</Steps>
+
+<Warning>
+  Low mastery scores are normal for newly added concepts. You need several reviews (5-10+) before the score becomes meaningful.
+</Warning>
+
+## Putting it all together
+
+### Daily workflow
+
+<Steps>
+  <Step title="Check due count">
+    Start your session by seeing how many reviews are waiting.
+  </Step>
+
+  <Step title="Clear reviews">
+    Work through your queue, honestly rating your recall.
+  </Step>
+
+  <Step title="Monitor recall rate">
+    After reviewing, check if your recall rate is improving over time.
+  </Step>
+
+  <Step title="Review mastery scores">
+    Weekly, check which concepts need more attention based on low mastery.
+  </Step>
+
+  <Step title="Maintain streak">
+    Make at least one review daily to keep your streak alive.
+  </Step>
+</Steps>
+
+### Optimization strategies
+
+<CardGroup cols={2}>
+  <Card title="High due count + low recall" icon="circle-exclamation">
+    **Problem**: Overwhelmed with difficult material.
+    
+    **Solution**: Pause adding new problems. Focus on mastering existing queue. Consider reviewing concepts directly.
+  </Card>
+
+  <Card title="Low due count + high recall" icon="circle-check">
+    **Problem**: Not challenged enough.
+    
+    **Solution**: Add more difficult problems. Explore new concepts. You're ready to expand.
+  </Card>
+
+  <Card title="Inconsistent streaks" icon="chart-scatter">
+    **Problem**: Irregular study habits.
+    
+    **Solution**: Set a daily reminder. Even one review counts. Build the habit before increasing volume.
+  </Card>
+
+  <Card title="Low mastery on key concepts" icon="graduation-cap">
+    **Problem**: Weak foundation in important areas.
+    
+    **Solution**: Add 3-5 more problems for that concept. Review the concept content. Practice variations.
+  </Card>
+</CardGroup>
+
+### Metrics to ignore
+
+Not all metrics need daily attention:
+
+- **Total problems**: Only relevant when planning to add new content
+- **Longest streak**: Motivational, but doesn't affect learning
+- **Single-day recall spikes/dips**: Normal variance; focus on weekly trends
+
+<Tip>
+  The most actionable metrics are **due count** (daily), **recall rate** (weekly), and **mastery scores** (weekly). These directly inform what to study next.
+</Tip>

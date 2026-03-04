@@ -1,0 +1,113 @@
+---
+title: Create problem
+description: Create a new problem with associated concept and spaced repetition tracking
+---
+
+## Create problem
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api.algomind.app/api/v1/problems \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -d '{
+    "concept_id": 1,
+    "title": "Two Sum",
+    "link": "https://leetcode.com/problems/two-sum/",
+    "difficulty": "EASY",
+    "summary": "Find two numbers that add up to target",
+    "description": "Given an array of integers nums and an integer target, return indices of the two numbers such that they add up to target.",
+    "answer": "def twoSum(nums, target):\n    seen = {}\n    for i, num in enumerate(nums):\n        complement = target - num\n        if complement in seen:\n            return [seen[complement], i]\n        seen[num] = i",
+    "answer_language": "python",
+    "hints": "Use a hash map to store seen numbers"
+  }'
+```
+</CodeGroup>
+
+<ResponseExample>
+```json Response
+{
+  "id": 42
+}
+```
+</ResponseExample>
+
+### Endpoint
+
+<ParamField path="method" type="string">
+  POST
+</ParamField>
+
+<ParamField path="endpoint" type="string">
+  /api/v1/problems
+</ParamField>
+
+### Request body
+
+<ParamField body="concept_id" type="integer" required>
+  The ID of the concept this problem belongs to. Must be a concept accessible to the authenticated user.
+</ParamField>
+
+<ParamField body="title" type="string" required>
+  The title of the problem.
+</ParamField>
+
+<ParamField body="link" type="string">
+  Optional URL link to the original problem (e.g., LeetCode link).
+</ParamField>
+
+<ParamField body="difficulty" type="string" required>
+  The difficulty level of the problem. Must be one of: `EASY`, `MEDIUM`, or `HARD`.
+</ParamField>
+
+<ParamField body="summary" type="string" required>
+  A brief summary of the problem.
+</ParamField>
+
+<ParamField body="description" type="string">
+  Full description of the problem including constraints and examples.
+</ParamField>
+
+<ParamField body="answer" type="string" required>
+  Your solution code or explanation for solving the problem.
+</ParamField>
+
+<ParamField body="answer_language" type="string">
+  The programming language used in the answer (e.g., "python", "javascript", "java").
+</ParamField>
+
+<ParamField body="hints" type="string">
+  Hints to help solve the problem.
+</ParamField>
+
+### Response
+
+<ResponseField name="id" type="integer">
+  The unique identifier of the newly created problem.
+</ResponseField>
+
+<Note>
+  When a problem is created, a review state is automatically initialized with:
+  - `next_review_at` set to the current time
+  - `interval_days` set to 0
+  - `ease_factor` set to 2.5
+  - `streak` set to 0
+</Note>
+
+### Status codes
+
+<ResponseField name="201" type="Created">
+  Problem successfully created.
+</ResponseField>
+
+<ResponseField name="400" type="Bad Request">
+  Invalid request body or concept_id does not exist.
+</ResponseField>
+
+<ResponseField name="403" type="Forbidden">
+  The specified concept is not accessible to the authenticated user.
+</ResponseField>
+
+<ResponseField name="500" type="Internal Server Error">
+  Failed to create problem or review state.
+</ResponseField>

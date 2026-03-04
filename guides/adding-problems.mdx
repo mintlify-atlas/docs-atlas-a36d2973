@@ -1,0 +1,191 @@
+---
+title: Adding problems
+description: Step-by-step guide for adding problems to your Algomind library
+---
+
+Add problems to your learning library either manually or by importing from LeetCode. Each problem becomes part of your spaced repetition review queue.
+
+## Import from LeetCode
+
+The fastest way to add a problem is by pasting a LeetCode URL.
+
+<Steps>
+  <Step title="Paste the LeetCode URL">
+    Navigate to the "Add Problem" page and paste a LeetCode problem URL into the **Problem Link** field.
+
+    ```
+    https://leetcode.com/problems/two-sum/
+    ```
+
+    <Info>The system automatically cleans URLs by removing query parameters and hash fragments, so any valid LeetCode problem URL will work.</Info>
+  </Step>
+
+  <Step title="Auto-fill detection">
+    When Algomind detects a valid LeetCode URL (containing `leetcode.com/problems/`), it automatically fetches problem details after a 500ms debounce.
+
+    The form will show:
+    - A loading spinner while fetching
+    - A green checkmark when data is successfully loaded
+
+    The following fields are auto-filled:
+    - **Title**: Problem name from LeetCode
+    - **Description**: Full problem statement (HTML formatted)
+    - **Difficulty**: Easy, Medium, or Hard
+    - **Summary**: Brief description based on the title
+  </Step>
+
+  <Step title="Review and customize">
+    Review the auto-filled details. The description appears in a preview mode showing the rendered HTML. Click the **Edit** button to modify it if needed.
+
+    All imported data can be edited before saving.
+  </Step>
+</Steps>
+
+<Accordion title="API details">
+  The LeetCode import uses two fallback endpoints:
+  - Primary: `GET /leetcode/fetch/direct?url={url}`
+  - Fallback: `GET /leetcode/fetch?url={url}`
+
+  Both return a `LeetCodeProblemData` object:
+  ```typescript
+  {
+    title: string
+    difficulty: string
+    description: string
+    tags: string[]
+  }
+  ```
+</Accordion>
+
+## Add manually
+
+For problems from other sources or custom challenges, enter details manually.
+
+<Steps>
+  <Step title="Enter required fields">
+    Fill in the following required fields (marked with *):
+
+    - **Problem Title**: Name of the problem
+    - **Problem Summary**: Brief one-line description
+    - **Difficulty**: Select Easy, Medium, or Hard
+    - **Associated Concept**: Choose the primary concept this problem practices
+    - **Answer**: Your solution code or explanation
+  </Step>
+
+  <Step title="Add optional fields">
+    Enhance your learning with optional fields:
+
+    - **Problem Link**: URL to the original problem (any platform)
+    - **Problem Description**: Full problem statement (supports HTML)
+    - **Hints**: Personal notes, insights, or approaches to remember
+    - **Answer Language**: Programming language for syntax highlighting
+  </Step>
+</Steps>
+
+## Solution notes and hints
+
+### Writing effective solutions
+
+The **Answer** field supports both markdown and code. The system automatically detects the content type:
+
+<Tabs>
+  <Tab title="Pure code">
+    If you paste code without markdown formatting, Algomind automatically wraps it in a code block using your selected language:
+
+    ```python
+    def twoSum(nums, target):
+        seen = {}
+        for i, num in enumerate(nums):
+            if target - num in seen:
+                return [seen[target - num], i]
+            seen[num] = i
+    ```
+
+    <Tip>The system auto-detects code using signals like semicolons, curly braces, and language keywords.</Tip>
+  </Tab>
+
+  <Tab title="Markdown explanation">
+    If your answer contains markdown (headings, lists, links), it's preserved as-is:
+
+    ```markdown
+    ## Approach
+    
+    1. Use a hash map to track seen numbers
+    2. For each number, check if complement exists
+    3. Return indices when found
+    
+    **Time**: O(n)  
+    **Space**: O(n)
+    ```
+  </Tab>
+
+  <Tab title="Mixed content">
+    Already formatted with code blocks? The system detects triple backticks and preserves your formatting. Your markdown and code blocks are kept intact exactly as you write them.
+    
+    <Info>
+      You can mix headings, explanations, code blocks, and other markdown elements in the Answer field. The system preserves all formatting.
+    </Info>
+  </Tab>
+</Tabs>
+
+### Answer language selection
+
+The **Answer Language** dropdown determines syntax highlighting for your solution.
+
+<Info>
+  The system automatically sets this to your most-used language based on previous problems. You can override it for each problem or select "Other" for default behavior.
+</Info>
+
+Supported languages include Python, C++, Java, JavaScript, TypeScript, Go, Rust, C, C#, Kotlin, Swift, SQL, and Bash.
+
+## Linking to concepts
+
+Every problem must be associated with exactly one concept. This connection:
+
+- Organizes your problem library by topic
+- Enables concept-level mastery tracking
+- Triggers cascading reviews (failing a problem resets the concept)
+
+<Warning>
+  When you rate a problem review as "Again" (complete failure), the parent concept is automatically reset and added back to your review queue. This ensures you revisit the fundamentals when struggling.
+</Warning>
+
+Select the concept from the **Associated Concept** dropdown, which shows all available concepts from your library.
+
+## Best practices
+
+<CardGroup cols={2}>
+  <Card title="Be concise in summaries" icon="message">
+    Keep summaries to one sentence. This appears in review cards and should quickly remind you what the problem is about.
+  </Card>
+
+  <Card title="Include key insights in hints" icon="lightbulb">
+    Use hints for "aha moments" or common pitfalls. These appear during reviews to jog your memory without revealing the full solution.
+  </Card>
+
+  <Card title="Choose concepts carefully" icon="folder">
+    Link problems to the primary technique needed, not just the topic. "Two Pointers" is better than "Arrays" for problems requiring that specific approach.
+  </Card>
+
+  <Card title="Keep descriptions clean" icon="code">
+    If importing from LeetCode, the HTML description is stored as-is. For manual entry, you can paste HTML or use plain text.
+  </Card>
+</CardGroup>
+
+## What happens after saving
+
+When you save a problem, the system:
+
+1. **Creates a problem record** with all your details
+2. **Initializes a review state** with:
+   - Initial interval: 0 days
+   - Default ease factor: 2.5
+   - Next review: Immediately (added to queue)
+3. **Auto-formats the answer** as markdown if it's plain code
+4. **Invalidates cache** for review queue and dashboard metrics
+
+<Info>
+  The API endpoint is `POST /problems` and returns the created problem with an auto-generated ID. Your problem appears in the review queue immediately.
+</Info>
+
+You'll see a success toast notification and can navigate to the review page to start practicing.

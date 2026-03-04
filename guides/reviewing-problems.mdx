@@ -1,0 +1,282 @@
+---
+title: Reviewing problems
+description: How to work through your review queue using spaced repetition
+---
+
+Algomind uses spaced repetition to help you retain problem-solving patterns. Reviews are scheduled based on your performance, with successful recalls spacing out over time.
+
+## Understanding the review queue
+
+Your review queue contains problems (and concepts) that are due for review based on their scheduled `next_review_at` timestamp.
+
+<Steps>
+  <Step title="Queue is auto-populated">
+    Problems enter the queue when:
+    - Newly added (immediate review)
+    - Scheduled review date arrives
+    - Parent concept fails (cascading reset)
+
+    The queue fetches up to **50 items** at once, ordered by review date (oldest first).
+  </Step>
+
+  <Step title="Review sessions are stateful">
+    When you start reviewing, the frontend `useReviewStore` tracks:
+    - Current queue of problems
+    - Your position in the queue (index)
+    - Session completion status
+
+    Navigation uses `nextCard()` to move forward after each rating.
+  </Step>
+</Steps>
+
+<Accordion title="API details">
+  The review queue is fetched via:
+  ```
+  GET /reviews/queue
+  ```
+
+  Returns an array of `ReviewQueueItem` objects with fields from both problems and concepts:
+  ```typescript
+  {
+    entity_type: 'problem' | 'concept'
+    entity_id: number
+    next_review_at: string
+    
+    // Problem-specific fields
+    problem_title?: string
+    difficulty?: string
+    summary?: string
+    description?: string
+    answer?: string
+    answer_language?: string
+    hints?: string
+    
+    // Concept-specific fields
+    concept_title?: string
+    content?: string
+  }
+  ```
+
+  The query uses LEFT JOINs to pull relevant fields based on `entity_type`.
+</Accordion>
+
+## Viewing problem details
+
+Each review card displays:
+
+### Header section
+- **Problem title**: The name of the problem
+- **Summary**: Brief description to jog your memory
+- **Difficulty badge**: Color-coded (green for Easy, yellow for Medium, red for Hard)
+
+### Problem description
+If the problem has a description (common for LeetCode imports), it renders as HTML in a scrollable, styled container. This helps you understand the requirements without revealing the solution.
+
+<Info>
+  The description is rendered using `dangerouslySetInnerHTML` to preserve formatting from LeetCode's HTML content.
+</Info>
+
+### Hidden answer section
+The solution starts hidden behind a "Reveal Answer" button. This forces you to attempt recall before checking your notes.
+
+## Attempting solutions
+
+Before revealing the answer, try to:
+
+1. **Recall the approach**: Think through the algorithm or pattern
+2. **Identify the technique**: What concept does this problem practice?
+3. **Estimate complexity**: Can you remember the time/space trade-offs?
+
+<Tip>
+  Use the **Space bar** keyboard shortcut to reveal the answer when ready. This keeps your hands on the keyboard for faster reviews.
+</Tip>
+
+### Revealing the answer
+
+Click "Reveal Answer" or press **Space** to show your solution notes. The answer is rendered as markdown with syntax highlighting:
+
+- If an `answer_language` is set, a badge displays the language
+- Code blocks are styled with proper formatting
+- Lists, headings, and inline code are rendered correctly
+
+<Accordion title="Markdown rendering details">
+  Answers use `react-markdown` with `remark-gfm` for GitHub-flavored markdown support. Custom components provide:
+
+  - Proper spacing for paragraphs (`mb-3`)
+  - Styled lists (disc bullets, decimal numbers)
+  - Inline code with background highlighting
+  - Code blocks with syntax-appropriate styling
+
+  The rendering respects light/dark mode for readability.
+</Accordion>
+
+## Rating your recall
+
+After reviewing the answer, rate how well you recalled the solution. Ratings determine when you'll see this problem again.
+
+<Steps>
+  <Step title="Choose a rating">
+    Click one of four buttons or use number keys (**1-4**):
+
+    <CardGroup cols={2}>
+      <Card title="Again" icon="rotate-left">
+        **Complete failure** - Couldn't recall the approach at all.
+        
+        Next review: **< 10 minutes**
+        
+        Keyboard: `1`
+      </Card>
+
+      <Card title="Hard" icon="triangle-exclamation">
+        **Partial recall** - Remembered some parts but struggled.
+        
+        Next review: **2 days**
+        
+        Keyboard: `2`
+      </Card>
+
+      <Card title="Good" icon="check">
+        **Successful recall** - Got it right with some thought.
+        
+        Next review: **4 days**
+        
+        Keyboard: `3`
+      </Card>
+
+      <Card title="Easy" icon="star">
+        **Instant recall** - Immediately knew the solution.
+        
+        Next review: **7 days**
+        
+        Keyboard: `4`
+      </Card>
+    </CardGroup>
+
+    <Info>
+      The intervals shown are approximations. Actual scheduling uses the SuperMemo SM-2 algorithm with ease factors and streak bonuses.
+    </Info>
+  </Step>
+
+  <Step title="System logs the review">
+    When you click a rating, the frontend calls:
+    ```
+    POST /reviews/problem/{id}/log
+    ```
+
+    With payload:
+    ```json
+    {
+      "rating": "AGAIN" | "HARD" | "GOOD" | "EASY"
+    }
+    ```
+
+    The backend:
+    1. Fetches current SRS state (interval, ease factor, streak)
+    2. Calculates new schedule using `srs.CalculateReview()`
+    3. Updates `review_states` with new values
+    4. Inserts a log entry in `review_logs`
+    5. Updates your daily streak in `users` table
+  </Step>
+
+  <Step title="Move to next card">
+    After the API confirms success, `nextCard()` is called to advance the queue index.
+
+    If you've completed all reviews, `isSessionComplete` is set to `true`.
+  </Step>
+</Steps>
+
+<Warning>
+  If the review fails to save (network error, server issue), you'll see an alert and the card won't advance. You can retry the rating.
+</Warning>
+
+## What happens after rating
+
+### SRS algorithm updates
+
+The SuperMemo SM-2 algorithm adjusts three key values:
+
+- **Interval days**: How many days until next review
+- **Ease factor**: Multiplier for future intervals (2.5 default)
+- **Streak**: Consecutive successful reviews
+
+Rating effects:
+
+| Rating | Ease Change | Interval Change | Streak |
+|--------|-------------|-----------------|--------|
+| Again  | -0.2        | Reset to 0      | Reset to 0 |
+| Hard   | -0.15       | Reduced         | Reset to 0 |
+| Good   | No change   | Increased       | +1 |
+| Easy   | +0.15       | Increased more  | +1 |
+
+<Tip>
+  Ease factor has bounds (minimum 1.3) to prevent intervals from becoming too short or too long.
+</Tip>
+
+### Cascading concept resets
+
+When you rate a **problem** as "Again", the system also resets the parent **concept**:
+
+```sql
+UPDATE review_states
+SET next_review_at = NOW(),
+    interval_days = 0,
+    streak = 0
+WHERE entity_type = 'concept'
+  AND entity_id = (SELECT concept_id FROM problems WHERE id = $1)
+```
+
+This ensures that if you're failing individual problems, you revisit the underlying concept to strengthen fundamentals.
+
+### Streak tracking
+
+Your user-level streak is updated with each review:
+
+- **Same day reviews**: Streak unchanged
+- **Consecutive day**: Streak +1
+- **Gap in days**: Streak resets to 1
+
+The `longest_streak` is updated if your current streak exceeds it.
+
+<Info>
+  Streaks are calculated based on `last_review_date` in the `users` table, which updates to `CURRENT_DATE` on every review.
+</Info>
+
+## Keyboard shortcuts
+
+<CardGroup cols={2}>
+  <Card title="Space" icon="keyboard">
+    Reveal the answer (when hidden)
+  </Card>
+
+  <Card title="1" icon="keyboard">
+    Rate as "Again"
+  </Card>
+
+  <Card title="2" icon="keyboard">
+    Rate as "Hard"
+  </Card>
+
+  <Card title="3" icon="keyboard">
+    Rate as "Good"
+  </Card>
+
+  <Card title="4" icon="keyboard">
+    Rate as "Easy"
+  </Card>
+</CardGroup>
+
+<Warning>
+  Keyboard shortcuts are disabled while the review is being saved to prevent double submissions.
+</Warning>
+
+## Review session completion
+
+When you complete all cards in the queue:
+
+1. The store sets `isSessionComplete = true`
+2. The UI typically shows a completion message or redirects
+3. Metrics are refreshed (dashboard, recall quality charts)
+
+<Info>
+  The queue is limited to 50 items per fetch. If you have more due reviews, you can start a new session after completing the first batch.
+</Info>

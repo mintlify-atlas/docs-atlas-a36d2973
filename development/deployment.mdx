@@ -1,0 +1,529 @@
+---
+title: Deployment
+description: Deploy Algomind to production using Docker and Dokploy with automated migrations and SSL
+---
+
+## Overview
+
+Algomind is deployed using Docker containers orchestrated by [Dokploy](https://dokploy.com), which handles builds, deployments, reverse proxying (Traefik), and SSL certificates (Let's Encrypt).
+
+Both frontend and backend use multi-stage Dockerfiles for optimized production images.
+
+<Info>
+  This guide assumes you're deploying to a Linux VPS with Dokploy installed. For other platforms, adapt the Docker configuration accordingly.
+</Info>
+
+## Prerequisites
+
+<Steps>
+  <Step title="Linux VPS">
+    - Ubuntu 22.04 or later (recommended)
+    - Minimum 2GB RAM, 2 CPU cores
+    - 20GB storage
+    - Public IP address
+  </Step>
+
+  <Step title="Domain name">
+    - Registered domain (e.g., `algomind.app`)
+    - DNS A records pointing to your VPS:
+      - `algomind.app` → VPS IP
+      - `api.algomind.app` → VPS IP
+  </Step>
+
+  <Step title="Dokploy installed">
+    Install Dokploy on your VPS:
+    ```bash
+    curl -sSL https://dokploy.com/install.sh | sh
+    ```
+    
+    Access Dokploy at `http://your-vps-ip:3000`
+  </Step>
+
+  <Step title="PostgreSQL database">
+    - Managed PostgreSQL (Supabase, AWS RDS, DigitalOcean, etc.)
+    - Or self-hosted PostgreSQL on the VPS
+    - Database created and accessible
+  </Step>
+</Steps>
+
+## Docker setup
+
+### Backend Dockerfile
+
+The backend uses a multi-stage build to create a minimal Alpine-based image:
+
+```dockerfile algomind-backend/Dockerfile
+# ---- Migrate binary ----
+FROM migrate/migrate:v4.18.1 AS migrate
+
+# ---- Build Stage ----
+FROM golang:1.24-alpine AS builder
+
+RUN apk add --no-cache git ca-certificates tzdata
+
+WORKDIR /app
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o server ./cmd/api/main.go
+
+# ---- Runtime Stage ----
+FROM alpine:3.19
+
+RUN apk add --no-cache ca-certificates tzdata
+
+WORKDIR /app
+
+COPY --from=builder /app/server .
+COPY --from=migrate /usr/local/bin/migrate /usr/local/bin/migrate
+COPY migrations ./migrations
+COPY entrypoint.sh .
+RUN chmod +x entrypoint.sh
+
+EXPOSE 8080
+
+ENTRYPOINT ["./entrypoint.sh"]
+```
+
+<Accordion title="Dockerfile breakdown">
+  1. **Migrate stage**: Pulls golang-migrate binary for the correct architecture
+  2. **Builder stage**: Compiles Go binary with optimizations (`-ldflags="-s -w"`)
+  3. **Runtime stage**: Minimal Alpine image (5MB base) with only the binary and migration tool
+  4. **Entrypoint**: Runs migrations before starting the server
+</Accordion>
+
+#### entrypoint.sh
+
+Automatically runs migrations on every deployment:
+
+```bash algomind-backend/entrypoint.sh
+#!/bin/sh
+set -e
+
+echo "Running database migrations..."
+migrate -path /app/migrations -database "$DATABASE_URL" up
+echo "Migrations complete."
+
+exec ./server
+```
+
+<Warning>
+  This runs `migrate up` on every container start. Migrations are idempotent, so rerunning is safe.
+</Warning>
+
+### Frontend Dockerfile
+
+The frontend uses Next.js standalone output for minimal runtime size:
+
+```dockerfile algomind-frontend/Dockerfile
+# ---- Build Stage ----
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm ci
+
+COPY . .
+RUN npm run build
+
+# ---- Runtime Stage ----
+FROM node:20-alpine AS runner
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+
+# Standalone output bundles only what's needed
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder /app/public ./public
+
+EXPOSE 3000
+
+ENV PORT=3000
+ENV HOSTNAME="0.0.0.0"
+
+CMD ["node", "server.js"]
+```
+
+<Accordion title="Next.js standalone mode">
+  Configure in `next.config.js`:
+  ```javascript
+  module.exports = {
+    output: 'standalone',
+  }
+  ```
+  
+  This creates a self-contained server bundle without full `node_modules`, reducing image size by ~80%.
+</Accordion>
+
+## Dokploy deployment
+
+### Create applications
+
+<Steps>
+  <Step title="Log in to Dokploy">
+    Navigate to `http://your-vps-ip:3000` and log in.
+  </Step>
+
+  <Step title="Create project">
+    1. Click "New Project"
+    2. Name: `Algomind`
+    3. Click "Create"
+  </Step>
+
+  <Step title="Add backend application">
+    1. Inside the project, click "New Application"
+    2. Type: `Docker`
+    3. Name: `algomind-backend`
+    4. Repository: Your Git repo URL
+    5. Branch: `main`
+    6. Dockerfile path: `algomind-backend/Dockerfile`
+    7. Build context: `algomind-backend`
+    8. Port: `8080`
+  </Step>
+
+  <Step title="Add frontend application">
+    1. Click "New Application" again
+    2. Type: `Docker`
+    3. Name: `algomind-frontend`
+    4. Repository: Your Git repo URL
+    5. Branch: `main`
+    6. Dockerfile path: `algomind-frontend/Dockerfile`
+    7. Build context: `algomind-frontend`
+    8. Port: `3000`
+  </Step>
+</Steps>
+
+### Environment variable configuration
+
+#### Backend environment variables
+
+In the `algomind-backend` application settings:
+
+<CodeGroup>
+```bash Runtime variables
+DATABASE_URL=postgresql://user:password@db.example.com:5432/algomind_prod?sslmode=require
+CLERK_SECRET_KEY=sk_live_xxxxxxxxxxxxx
+PORT=8080
+LOG_LEVEL=info
+```
+</CodeGroup>
+
+<Warning>
+  Mark `DATABASE_URL` and `CLERK_SECRET_KEY` as "Secret" in Dokploy to hide them from logs.
+</Warning>
+
+#### Frontend environment variables
+
+In the `algomind-frontend` application settings:
+
+<Card title="Build arguments (build time)" icon="hammer">
+  These must be set as **build arguments** because they're baked into the Next.js bundle:
+  
+  ```bash
+  NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_xxxxxxxxxxxxx
+  NEXT_PUBLIC_SITE_URL=https://algomind.app
+  NEXT_PUBLIC_API_URL=https://api.algomind.app
+  NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
+  NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
+  NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL=/dashboard
+  NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL=/dashboard
+  ```
+</Card>
+
+<Card title="Runtime variables" icon="server">
+  Set as regular environment variables:
+  
+  ```bash
+  CLERK_SECRET_KEY=sk_live_xxxxxxxxxxxxx
+  NODE_ENV=production
+  ```
+</Card>
+
+<Info>
+  Changing build arguments requires a full rebuild. Use the "Rebuild" button in Dokploy.
+</Info>
+
+### Domain and SSL setup
+
+<Steps>
+  <Step title="Configure backend domain">
+    In `algomind-backend` settings:
+    1. Go to "Domains" tab
+    2. Add domain: `api.algomind.app`
+    3. Enable "Generate SSL Certificate"
+    4. Save
+    
+    Dokploy automatically:
+    - Configures Traefik reverse proxy
+    - Obtains Let's Encrypt certificate
+    - Redirects HTTP → HTTPS
+  </Step>
+
+  <Step title="Configure frontend domain">
+    In `algomind-frontend` settings:
+    1. Go to "Domains" tab
+    2. Add domain: `algomind.app`
+    3. Enable "Generate SSL Certificate"
+    4. Save
+  </Step>
+
+  <Step title="Verify DNS propagation">
+    ```bash
+    dig +short api.algomind.app  # Should return VPS IP
+    dig +short algomind.app      # Should return VPS IP
+    ```
+  </Step>
+
+  <Step title="Deploy applications">
+    1. Click "Deploy" on backend application
+    2. Wait for build and deployment to complete
+    3. Click "Deploy" on frontend application
+    4. Wait for build and deployment to complete
+  </Step>
+</Steps>
+
+<Note>
+  SSL certificate generation can take 1-2 minutes. Check logs if it fails.
+</Note>
+
+## Migration handling
+
+Migrations run automatically via the backend `entrypoint.sh` script on every deployment.
+
+### Migration workflow
+
+<Steps>
+  <Step title="Code changes pushed">
+    Push new migration files to Git:
+    ```bash
+    git add algomind-backend/migrations/000010_new_feature.up.sql
+    git commit -m "Add migration for new feature"
+    git push
+    ```
+  </Step>
+
+  <Step title="Dokploy detects changes">
+    Dokploy webhook triggers rebuild (if configured) or manually click "Deploy".
+  </Step>
+
+  <Step title="Docker builds new image">
+    New migrations are included in the image.
+  </Step>
+
+  <Step title="Container starts">
+    `entrypoint.sh` runs:
+    ```bash
+    migrate -path /app/migrations -database "$DATABASE_URL" up
+    ```
+    
+    Only new migrations are applied.
+  </Step>
+
+  <Step title="Server starts">
+    After migrations complete, the Go server starts normally.
+  </Step>
+</Steps>
+
+### Manual migration control
+
+If you need to run migrations manually:
+
+<Accordion title="SSH into container">
+  ```bash
+  # Find container ID
+  docker ps | grep algomind-backend
+  
+  # SSH into container
+  docker exec -it <container-id> sh
+  
+  # Run migrations
+  migrate -path /app/migrations -database "$DATABASE_URL" up
+  ```
+</Accordion>
+
+<Accordion title="Rollback migration">
+  ```bash
+  # Rollback last migration
+  docker exec -it <container-id> sh
+  migrate -path /app/migrations -database "$DATABASE_URL" down 1
+  ```
+  
+  <Warning>
+    Always test rollbacks in staging first. Data loss is possible.
+  </Warning>
+</Accordion>
+
+<Accordion title="Check migration status">
+  ```bash
+  docker exec -it <container-id> sh
+  migrate -path /app/migrations -database "$DATABASE_URL" version
+  ```
+</Accordion>
+
+## Health checks and monitoring
+
+### Backend health endpoint
+
+The backend exposes a health check at `/health`:
+
+```bash
+curl https://api.algomind.app/health
+```
+
+Expected response:
+```json
+{"status":"ok"}
+```
+
+<Accordion title="Configure Dokploy health check">
+  In backend application settings:
+  1. Go to "Health Check" tab
+  2. Path: `/health`
+  3. Interval: `30s`
+  4. Timeout: `5s`
+  5. Retries: `3`
+  6. Save
+</Accordion>
+
+### Viewing logs
+
+<CodeGroup>
+```bash Dokploy UI
+1. Open application in Dokploy
+2. Go to "Logs" tab
+3. View real-time logs
+```
+
+```bash Docker CLI
+# Backend logs
+docker logs -f algomind-backend
+
+# Frontend logs
+docker logs -f algomind-frontend
+
+# Last 100 lines
+docker logs --tail 100 algomind-backend
+```
+</CodeGroup>
+
+## Continuous deployment
+
+### GitHub webhook
+
+<Steps>
+  <Step title="Get webhook URL">
+    In Dokploy application settings:
+    1. Go to "Webhooks" tab
+    2. Copy webhook URL
+  </Step>
+
+  <Step title="Add to GitHub">
+    In your GitHub repository:
+    1. Go to Settings → Webhooks
+    2. Click "Add webhook"
+    3. Paste webhook URL
+    4. Content type: `application/json`
+    5. Trigger on: `push` events
+    6. Add webhook
+  </Step>
+
+  <Step title="Test webhook">
+    Push a commit:
+    ```bash
+    git commit --allow-empty -m "Test webhook"
+    git push
+    ```
+    
+    Dokploy should automatically rebuild and redeploy.
+  </Step>
+</Steps>
+
+<Info>
+  Configure branch filter in Dokploy to only deploy from `main` or `production` branch.
+</Info>
+
+## Scaling considerations
+
+<Accordion title="Horizontal scaling">
+  Run multiple backend instances behind a load balancer:
+  ```bash
+  docker-compose scale backend=3
+  ```
+  
+  Traefik automatically load balances across instances.
+</Accordion>
+
+<Accordion title="Database connection pooling">
+  The backend uses pgx connection pooling. Configure in code:
+  ```go
+  db, err := sqlx.Connect("postgres", os.Getenv("DATABASE_URL"))
+  db.SetMaxOpenConns(25)  // Max connections
+  db.SetMaxIdleConns(5)   // Idle connections
+  db.SetConnMaxLifetime(5 * time.Minute)
+  ```
+</Accordion>
+
+<Accordion title="CDN for static assets">
+  Configure Next.js to serve static assets from a CDN:
+  ```javascript next.config.js
+  module.exports = {
+    assetPrefix: 'https://cdn.algomind.app',
+  }
+  ```
+</Accordion>
+
+## Troubleshooting
+
+<Accordion title="Build fails">
+  - Check Dokploy build logs for errors
+  - Verify Dockerfile paths are correct
+  - Ensure all dependencies are in `package.json` / `go.mod`
+  - Try building locally: `docker build -t test .`
+</Accordion>
+
+<Accordion title="Container crashes on startup">
+  - Check migration errors: `docker logs algomind-backend`
+  - Verify `DATABASE_URL` is correct
+  - Ensure database is accessible from container
+  - Check if port is already in use
+</Accordion>
+
+<Accordion title="SSL certificate fails">
+  - Verify DNS A records point to VPS IP
+  - Check if ports 80 and 443 are open: `sudo ufw status`
+  - Wait for DNS propagation (up to 48 hours)
+  - Check Traefik logs: `docker logs traefik`
+</Accordion>
+
+<Accordion title="Frontend can't reach backend">
+  - Verify `NEXT_PUBLIC_API_URL` in build arguments
+  - Check CORS configuration in backend
+  - Ensure backend is deployed and healthy
+  - Test backend directly: `curl https://api.algomind.app/health`
+</Accordion>
+
+## Backup and restore
+
+<Accordion title="Database backup">
+  ```bash
+  # Backup
+  pg_dump -h db.example.com -U user -d algomind_prod > backup.sql
+  
+  # Restore
+  psql -h db.example.com -U user -d algomind_prod < backup.sql
+  ```
+  
+  Automate with cron:
+  ```bash
+  0 2 * * * pg_dump -h db.example.com -U user -d algomind_prod | gzip > /backups/algomind_$(date +\%Y\%m\%d).sql.gz
+  ```
+</Accordion>
+
+<Note>
+  For local development setup, see the [Local setup guide](/development/local-setup).
+</Note>

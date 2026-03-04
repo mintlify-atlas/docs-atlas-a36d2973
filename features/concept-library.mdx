@@ -1,0 +1,308 @@
+---
+title: Concept library
+description: Organize your problems into concepts like Arrays, Graphs, and Dynamic Programming for targeted practice
+---
+
+The concept library is your organizational system for grouping related problems. Instead of a flat list, you categorize problems by algorithmic concept—allowing you to identify weak areas and study systematically.
+
+## What are concepts?
+
+Concepts are topic categories that represent algorithmic patterns or data structures:
+
+- **Arrays & Hashing**
+- **Two Pointers**
+- **Sliding Window**
+- **Binary Search**
+- **Linked Lists**
+- **Trees & Graphs**
+- **Dynamic Programming**
+- **Backtracking**
+- **Greedy Algorithms**
+
+<Info>
+  Each problem in your review queue is linked to exactly one concept, helping you track mastery at the concept level.
+</Info>
+
+## System vs. custom concepts
+
+Algomind provides two types of concepts:
+
+<Steps>
+  <Step title="System concepts">
+    Pre-built concepts covering common algorithmic topics. These are:
+    - Shared across all users
+    - Created by the Algomind team
+    - Editable through user overrides (your changes don't affect others)
+  </Step>
+  
+  <Step title="Custom concepts">
+    Concepts you create yourself for specialized topics:
+    - Visible only to you
+    - Fully customizable (title, description, content)
+    - Can be deleted anytime
+  </Step>
+</Steps>
+
+## Concept structure
+
+Each concept contains:
+
+```typescript
+interface Concept {
+  id: number
+  title: string              // e.g., "Binary Search"
+  description: string | null // Short summary
+  content: string            // Full markdown explanation
+  user_id: string | null     // null for system concepts
+  base_concept_id: number | null // Links user override to system concept
+  created_at: timestamp
+}
+```
+
+### Concept content
+
+The `content` field supports full markdown and typically includes:
+
+- **Core pattern explanation**: When to use this approach
+- **Time/space complexity**: Typical complexity characteristics
+- **Key techniques**: Common variations and tricks
+- **Example problems**: Representative LeetCode problems
+- **Common pitfalls**: What to watch out for
+
+<Tip>
+  Think of concept content as your personal study notes. Write explanations in your own words—it helps with retention.
+</Tip>
+
+## Creating concepts
+
+To create a new concept:
+
+```bash
+POST /api/concepts
+```
+
+```json
+{
+  "title": "Monotonic Stack",
+  "description": "Stack-based pattern for next greater/smaller element problems",
+  "content": "# Monotonic Stack\n\nA monotonic stack maintains elements in..."
+}
+```
+
+The backend implementation:
+
+```go algomind-backend/internal/handlers/concept.go
+func (h *ConceptHandler) CreateConcept(c echo.Context) error {
+    var req ConceptRequest
+    userID := c.Get("user_id").(string)
+
+    if err := c.Bind(&req); err != nil {
+        return echo.NewHTTPError(http.StatusBadRequest, "invalid JSON body")
+    }
+
+    query := `
+        INSERT INTO concepts (user_id, base_concept_id, title, description, content)
+        VALUES ($1, NULL, $2, $3, $4)
+        RETURNING id, title, description, content, user_id, base_concept_id, created_at
+    `
+
+    var concept models.Concept
+    if err := h.DB.Db.GetContext(
+        c.Request().Context(),
+        &concept,
+        query,
+        userID,
+        req.Title,
+        req.Description,
+        req.Content,
+    ); err != nil {
+        return echo.NewHTTPError(
+            http.StatusInternalServerError,
+            "failed to create concept",
+        )
+    }
+
+    return c.JSON(http.StatusCreated, concept)
+}
+```
+
+## Editing system concepts
+
+When you edit a system concept, Algomind creates a user-specific override:
+
+```go algomind-backend/internal/handlers/concept.go
+if current.UserID == nil {
+    // It's a system concept. Check if user already has an override.
+    var existingOverrideID int64
+    overrideErr := h.DB.Db.GetContext(c.Request().Context(), &existingOverrideID,
+        "SELECT id FROM concepts WHERE user_id = $1 AND base_concept_id = $2", userID, current.ID)
+
+    if overrideErr == sql.ErrNoRows {
+        // No override yet — insert one
+        query := `
+            INSERT INTO concepts (user_id, base_concept_id, title, description, content)
+            VALUES ($1, $2, $3, $4, $5)
+            RETURNING id, title, description, content, user_id, base_concept_id, created_at
+        `
+        // ... execute insert
+    } else if overrideErr == nil {
+        // Override exists — update it
+        query := `
+            UPDATE concepts SET title = $1, description = $2, content = $3
+            WHERE id = $4
+            RETURNING id, title, description, content, user_id, base_concept_id, created_at
+        `
+        // ... execute update
+    }
+}
+```
+
+This architecture ensures:
+- System concepts remain unchanged for other users
+- Your customizations are preserved
+- You can reset to system defaults anytime
+
+<Note>
+  The `base_concept_id` field links your override back to the original system concept.
+</Note>
+
+## Resetting to defaults
+
+To revert a system concept to its default:
+
+```bash
+DELETE /api/concepts/:id/reset
+```
+
+```go algomind-backend/internal/handlers/concept.go
+func (h *ConceptHandler) ResetConcept(c echo.Context) error {
+    userID := c.Get("user_id").(string)
+    systemConceptID := c.Param("id")
+
+    // Delete the user's override for this base_concept_id
+    query := `DELETE FROM concepts WHERE base_concept_id = $1 AND user_id = $2`
+    res, err := h.DB.Db.ExecContext(c.Request().Context(), query, systemConceptID, userID)
+    if err != nil {
+        return echo.NewHTTPError(http.StatusInternalServerError, "failed to reset concept")
+    }
+
+    return c.JSON(http.StatusOK, map[string]string{"message": "concept reset to system default"})
+}
+```
+
+## Linking problems to concepts
+
+When adding a problem, you select a concept from a dropdown:
+
+```tsx algomind-frontend/app/dashboard/add-problem/page.tsx
+<Card className="shadow-sm">
+    <CardHeader className="pb-4">
+        <CardTitle>Problem Details</CardTitle>
+        <CardDescription>
+            Enter the problem title and link to track it
+        </CardDescription>
+    </CardHeader>
+    <CardContent>
+        <SubmitProblemForm />
+    </CardContent>
+</Card>
+```
+
+The form includes a concept selector that shows:
+- All system concepts (that you haven't overridden)
+- Your overrides of system concepts
+- Your custom concepts
+
+Sorted alphabetically by title.
+
+## Studying concepts before reviews
+
+A key workflow is reviewing concept theory before tackling problems:
+
+1. Navigate to **Concepts** from the dashboard
+2. Select a concept to study its content
+3. Read through the pattern explanation and examples
+4. Go to **Review** and filter by that concept
+5. Apply the pattern to problems in your queue
+
+<Tip>
+  If you consistently struggle with problems from a specific concept, spend time expanding that concept's content with more examples and notes.
+</Tip>
+
+## Concept-level analytics
+
+Algomind tracks mastery metrics per concept (see [Dashboard metrics](/features/dashboard-metrics)):
+
+- **Problem count**: How many problems you have for this concept
+- **Average ease factor**: Average difficulty across concept problems
+- **Average interval**: Average review spacing
+- **Retention rate**: Percentage of successful reviews (GOOD/EASY ratings)
+- **Mastery score**: Composite score from 0-100
+
+This helps you identify:
+- Which concepts need more practice
+- Which concepts you've mastered
+- Where to allocate study time
+
+## Listing concepts
+
+The concept listing query ensures you see the right version (override vs. system default):
+
+```go algomind-backend/internal/handlers/concept.go
+query := `
+    SELECT id, title, description, content, user_id, base_concept_id, created_at
+    FROM concepts
+    WHERE user_id IS NULL
+      AND id NOT IN (
+          SELECT base_concept_id FROM concepts 
+          WHERE user_id = $1 AND base_concept_id IS NOT NULL
+      )
+    UNION ALL
+    SELECT id, title, description, content, user_id, base_concept_id, created_at
+    FROM concepts
+    WHERE user_id = $1
+    ORDER BY title ASC
+`
+```
+
+This query:
+1. Selects system concepts that you haven't overridden
+2. UNION with your personal concepts and overrides
+3. Orders everything alphabetically
+
+<Warning>
+  Deleting a concept that has linked problems will fail. You must re-assign or delete those problems first.
+</Warning>
+
+## Best practices
+
+<Accordion title="How many concepts should I have?">
+  Start with 10-15 core concepts covering fundamental topics. Add specialized concepts as you encounter new patterns.
+  
+  Too many concepts (30+) makes it hard to track mastery. Too few (< 5) doesn't provide enough granularity.
+</Accordion>
+
+<Accordion title="Should I edit system concepts?">
+  Yes! System concepts are starting points. Add examples that resonate with you, expand explanations, and include personal mnemonics.
+  
+  Your custom notes are more valuable than generic descriptions.
+</Accordion>
+
+<Accordion title="How do I organize similar concepts?">
+  Use concept folders (if available) or naming conventions:
+  - "DP - 1D" vs. "DP - 2D"
+  - "Graph - BFS" vs. "Graph - DFS"
+  
+  This creates a natural hierarchy while maintaining the flat structure.
+</Accordion>
+
+## Related features
+
+<CardGroup cols={2}>
+  <Card title="Dashboard metrics" icon="chart-line" href="/features/dashboard-metrics">
+    View concept-level mastery analytics
+  </Card>
+  <Card title="Adding problems" icon="plus" href="/guides/adding-problems">
+    Learn how to link problems to concepts
+  </Card>
+</CardGroup>

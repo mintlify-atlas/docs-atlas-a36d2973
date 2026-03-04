@@ -1,0 +1,301 @@
+---
+title: Environment variables
+description: Complete reference for all environment variables used in Algomind frontend and backend
+---
+
+## Overview
+
+Algomind uses environment variables to configure authentication, database connections, and application URLs. Variables are split between frontend (Next.js) and backend (Go).
+
+<Warning>
+  Never commit `.env`, `.env.local`, or any file containing secrets to version control. These files should be listed in `.gitignore`.
+</Warning>
+
+## Frontend variables
+
+Frontend environment variables are set in `.env.local` for local development and configured at build time for production.
+
+### Required variables
+
+These variables must be set for the frontend to function:
+
+<CodeGroup>
+```bash .env.local (development)
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_xxxxxxxxxxxxx
+CLERK_SECRET_KEY=sk_test_xxxxxxxxxxxxx
+NEXT_PUBLIC_SITE_URL=http://localhost:3000
+NEXT_PUBLIC_API_URL=http://localhost:8080
+NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
+NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
+NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL=/dashboard
+NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL=/dashboard
+```
+
+```bash .env (production)
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_xxxxxxxxxxxxx
+CLERK_SECRET_KEY=sk_live_xxxxxxxxxxxxx
+NEXT_PUBLIC_SITE_URL=https://algomind.app
+NEXT_PUBLIC_API_URL=https://api.algomind.app
+NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
+NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
+NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL=/dashboard
+NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL=/dashboard
+```
+</CodeGroup>
+
+#### NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+
+- **Purpose**: Clerk publishable API key for client-side authentication
+- **Required**: Yes
+- **Example**: `pk_test_Y2xlcmsuYWxnb21pbmQuZGV2JA`
+- **Where to get**: [Clerk Dashboard](https://dashboard.clerk.com) → API Keys
+- **Build time**: Yes - baked into the frontend bundle
+
+<Info>
+  Use `pk_test_` keys for development and `pk_live_` keys for production.
+</Info>
+
+#### CLERK_SECRET_KEY
+
+- **Purpose**: Clerk secret key for server-side API calls and middleware
+- **Required**: Yes
+- **Example**: `sk_test_abcdef1234567890`
+- **Where to get**: [Clerk Dashboard](https://dashboard.clerk.com) → API Keys
+- **Security**: Keep this secret! Never expose in client-side code.
+
+#### NEXT_PUBLIC_SITE_URL
+
+- **Purpose**: Base URL of the frontend application
+- **Required**: Yes
+- **Development**: `http://localhost:3000`
+- **Production**: `https://yourdomain.com`
+- **Used for**: Redirect URLs, CORS, and canonical URLs
+
+#### NEXT_PUBLIC_API_URL
+
+- **Purpose**: Base URL of the backend API server
+- **Required**: Yes
+- **Development**: `http://localhost:8080`
+- **Production**: `https://api.yourdomain.com`
+- **Used for**: All API requests from the frontend
+
+<Warning>
+  Make sure NEXT_PUBLIC_API_URL points to your backend server, not the frontend.
+</Warning>
+
+#### NEXT_PUBLIC_CLERK_SIGN_IN_URL
+
+- **Purpose**: Path to the sign-in page
+- **Required**: Yes
+- **Default**: `/sign-in`
+- **Used for**: Redirecting users to sign in
+
+#### NEXT_PUBLIC_CLERK_SIGN_UP_URL
+
+- **Purpose**: Path to the sign-up page
+- **Required**: Yes
+- **Default**: `/sign-up`
+- **Used for**: Redirecting users to create an account
+
+#### NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL
+
+- **Purpose**: Where to redirect users after successful sign-in
+- **Required**: Yes
+- **Default**: `/dashboard`
+- **Used for**: Post-authentication navigation
+
+#### NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL
+
+- **Purpose**: Where to redirect users after successful sign-up
+- **Required**: Yes
+- **Default**: `/dashboard`
+- **Used for**: Post-registration navigation
+
+### Optional variables
+
+#### NODE_ENV
+
+- **Purpose**: Environment mode
+- **Values**: `development`, `production`, `test`
+- **Default**: Set automatically by Next.js
+- **Note**: Don't manually override this in most cases
+
+## Backend variables
+
+Backend environment variables are set in `.env` for local development and configured in the deployment environment for production.
+
+### Required variables
+
+<CodeGroup>
+```bash .env (development)
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/algomind_dev?sslmode=disable
+CLERK_SECRET_KEY=sk_test_xxxxxxxxxxxxx
+PORT=8080
+```
+
+```bash .env (production)
+DATABASE_URL=postgresql://user:password@db.example.com:5432/algomind_prod?sslmode=require
+CLERK_SECRET_KEY=sk_live_xxxxxxxxxxxxx
+PORT=8080
+```
+</CodeGroup>
+
+#### DATABASE_URL
+
+- **Purpose**: PostgreSQL connection string
+- **Required**: Yes
+- **Format**: `postgresql://[user]:[password]@[host]:[port]/[database]?sslmode=[mode]`
+- **Example**: `postgresql://postgres:postgres@localhost:5432/algomind_dev?sslmode=disable`
+- **Used for**: All database operations
+
+<Accordion title="DATABASE_URL components explained">
+  - **user**: PostgreSQL username
+  - **password**: PostgreSQL password
+  - **host**: Database server hostname or IP
+  - **port**: PostgreSQL port (default: 5432)
+  - **database**: Database name
+  - **sslmode**: SSL/TLS mode
+    - `disable` - No SSL (local development only)
+    - `require` - SSL required (production)
+    - `verify-full` - SSL with certificate verification
+</Accordion>
+
+<Warning>
+  Always use `sslmode=require` or `sslmode=verify-full` in production. Never use `sslmode=disable` in production.
+</Warning>
+
+#### CLERK_SECRET_KEY
+
+- **Purpose**: Clerk secret key for JWT verification
+- **Required**: Yes
+- **Example**: `sk_test_abcdef1234567890`
+- **Where to get**: [Clerk Dashboard](https://dashboard.clerk.com) → API Keys
+- **Used for**: Verifying user authentication tokens in API middleware
+
+<Info>
+  This must match the CLERK_SECRET_KEY used in the frontend.
+</Info>
+
+#### PORT
+
+- **Purpose**: Port number for the API server to listen on
+- **Required**: Yes
+- **Default**: `8080`
+- **Example**: `8080`, `3001`, `8000`
+- **Note**: Make sure this port is available and not blocked by firewall
+
+### Optional variables
+
+#### LOG_LEVEL
+
+- **Purpose**: Logging verbosity level
+- **Values**: `debug`, `info`, `warn`, `error`
+- **Default**: `info`
+- **Development**: `debug` for verbose logs
+- **Production**: `info` or `warn`
+
+## Setting environment variables
+
+### Local development
+
+<Steps>
+  <Step title="Create frontend .env.local">
+    In `algomind-frontend/`:
+    ```bash
+    touch .env.local
+    ```
+    Add all `NEXT_PUBLIC_*` and `CLERK_SECRET_KEY` variables.
+  </Step>
+
+  <Step title="Create backend .env">
+    In `algomind-backend/`:
+    ```bash
+    touch .env
+    ```
+    Add `DATABASE_URL`, `CLERK_SECRET_KEY`, and `PORT`.
+  </Step>
+
+  <Step title="Load variables">
+    The backend uses `github.com/joho/godotenv` to automatically load `.env` on startup.
+    
+    Next.js automatically loads `.env.local` during development.
+  </Step>
+</Steps>
+
+### Docker deployment
+
+When using Docker, pass environment variables via:
+
+<Accordion title="docker run">
+  ```bash
+  docker run -e DATABASE_URL="postgresql://..." \
+    -e CLERK_SECRET_KEY="sk_live_..." \
+    -e PORT=8080 \
+    algomind-backend
+  ```
+</Accordion>
+
+<Accordion title="docker-compose.yml">
+  ```yaml
+  services:
+    backend:
+      image: algomind-backend
+      environment:
+        - DATABASE_URL=postgresql://...
+        - CLERK_SECRET_KEY=sk_live_...
+        - PORT=8080
+    
+    frontend:
+      image: algomind-frontend
+      build:
+        args:
+          - NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_...
+          - NEXT_PUBLIC_SITE_URL=https://...
+      environment:
+        - CLERK_SECRET_KEY=sk_live_...
+  ```
+</Accordion>
+
+<Accordion title="Dokploy">
+  In the Dokploy web UI:
+  1. Navigate to your application
+  2. Go to Environment Variables section
+  3. Add each variable as key-value pairs
+  4. Mark sensitive variables as "Secret"
+  5. Redeploy the application
+</Accordion>
+
+<Warning>
+  Frontend `NEXT_PUBLIC_*` variables must be set at **build time** because they're baked into the Next.js bundle. Changing them requires a rebuild.
+</Warning>
+
+## Security best practices
+
+<Card title="Protect your secrets" icon="shield">
+  - Never commit `.env` or `.env.local` files
+  - Add them to `.gitignore`
+  - Use different keys for development and production
+  - Rotate keys periodically
+  - Use secret management tools in production (AWS Secrets Manager, HashiCorp Vault, etc.)
+  - Restrict database user permissions (don't use superuser accounts)
+</Card>
+
+## Verification
+
+Check if your environment variables are set correctly:
+
+<CodeGroup>
+```bash Frontend
+# In algomind-frontend/
+node -e "console.log(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ? '✓ Set' : '✗ Missing')"
+```
+
+```bash Backend
+# In algomind-backend/
+go run -e "package main; import (\"os\"); func main() { if os.Getenv(\"DATABASE_URL\") != \"\" { println(\"✓ Set\") } else { println(\"✗ Missing\") } }"
+```
+</CodeGroup>
+
+<Note>
+  For deployment-specific configuration, see the [Deployment guide](/development/deployment).
+</Note>

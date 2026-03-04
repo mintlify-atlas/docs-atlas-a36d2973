@@ -1,0 +1,460 @@
+---
+title: Dashboard metrics
+description: Track your progress with streak analytics, recall quality trends, and concept mastery scores
+---
+
+The Algomind dashboard provides comprehensive metrics to help you understand your learning progress, identify weak areas, and stay motivated with streak tracking.
+
+## Dashboard overview
+
+The dashboard displays four key metric categories:
+
+- **Quick stats**: At-a-glance summary of your current status
+- **Streak tracking**: Daily review streaks and longest streak
+- **Recall quality**: 7-day and 30-day trend charts
+- **Topic mastery**: Concept-level performance breakdown
+
+<Info>
+  All metrics update in real-time as you complete reviews and add problems.
+</Info>
+
+## Quick stats
+
+The header displays four metrics cards:
+
+```tsx algomind-frontend/app/dashboard/page.tsx
+<QuickStat
+    icon={<Target className="h-4 w-4" />}
+    label="Due Today"
+    value={data?.due_count ?? 0}
+    color="text-orange-500"
+/>
+<QuickStat
+    icon={<TrendingUp className="h-4 w-4" />}
+    label="Reviewed Today"
+    value={data?.reviews_today ?? 0}
+    color="text-green-500"
+/>
+<QuickStat
+    icon={<Sparkles className="h-4 w-4" />}
+    label="Current Streak"
+    value={`${data?.current_streak ?? 0} days`}
+    color="text-amber-500"
+/>
+<QuickStat
+    icon={<BookOpen className="h-4 w-4" />}
+    label="Total Problems"
+    value={totalProblems}
+    color="text-blue-500"
+/>
+```
+
+### Due today
+
+Problems scheduled for review today or overdue:
+
+```sql
+SELECT COUNT(*) FROM review_states 
+WHERE user_id = $1 AND next_review_at <= NOW()
+```
+
+<Tip>
+  Try to clear your due count daily. Letting reviews pile up defeats the purpose of spaced repetition.
+</Tip>
+
+### Reviewed today
+
+Problems you've reviewed since midnight:
+
+```sql
+SELECT COUNT(*) FROM review_logs 
+WHERE user_id = $1
+  AND reviewed_at >= CURRENT_DATE
+  AND reviewed_at < CURRENT_DATE + INTERVAL '1 day'
+```
+
+### Current streak
+
+Consecutive days you've completed at least one review:
+
+```sql
+COALESCE((SELECT current_streak FROM users WHERE id = $1), 0)
+```
+
+Streak logic:
+- Increments when you complete a review on a new day
+- Resets to 0 if you skip a day
+- Persists across sessions
+
+<Note>
+  Your streak counts days with ANY review activity—even a single problem review maintains the streak.
+</Note>
+
+### Total problems
+
+Total problems in your review queue:
+
+```sql
+SELECT COUNT(*) FROM problems WHERE user_id = $1
+```
+
+## Streak card
+
+The streak card shows:
+
+- **Current streak**: Your active consecutive day count
+- **Longest streak**: Your all-time best streak
+- **Streak calendar**: Visual history of review activity
+
+### Backend implementation
+
+```go algomind-backend/internal/handlers/metrics.go
+func (h *MetricsHandler) GetDashboard(c echo.Context) error {
+    userID := c.Get("user_id").(string)
+    ctx := c.Request().Context()
+
+    var summary dto.DashboardSummary
+
+    query := `
+        SELECT 
+            (SELECT COUNT(*) FROM review_states 
+             WHERE user_id = $1 AND next_review_at <= NOW()) as due_count,
+            
+            COALESCE((SELECT current_streak FROM users 
+             WHERE id = $1), 0) as current_streak,
+            
+            COALESCE((SELECT longest_streak FROM users 
+             WHERE id = $1), 0) as longest_streak,
+            
+            (SELECT COUNT(*) FROM review_logs 
+             WHERE user_id = $1
+               AND reviewed_at >= CURRENT_DATE
+               AND reviewed_at < CURRENT_DATE + INTERVAL '1 day') as reviews_today,
+            
+            (SELECT COUNT(*) FROM problems 
+             WHERE user_id = $1) as total_problems
+    `
+
+    if err := h.DB.Db.GetContext(ctx, &summary, query, userID); err != nil {
+        return echo.NewHTTPError(
+            http.StatusInternalServerError,
+            "failed to fetch dashboard metrics",
+        )
+    }
+
+    return c.JSON(http.StatusOK, summary)
+}
+```
+
+<Warning>
+  Streaks are timezone-dependent. If you review at 11:59 PM and again at 12:01 AM, that counts as two different days.
+</Warning>
+
+## Recall quality chart
+
+The recall quality line chart shows your daily success rate:
+
+### Calculation formula
+
+```
+Recall Rate = (GOOD + EASY reviews) / Total reviews × 100
+```
+
+A "successful" review is any rating of GOOD or EASY. AGAIN and HARD are considered unsuccessful.
+
+### Time ranges
+
+You can view recall quality for:
+
+- **7 days** (default): Week-at-a-glance
+- **30 days**: Monthly trends
+- **90 days**: Long-term patterns
+
+### Backend query
+
+```go algomind-backend/internal/handlers/metrics.go
+func (h *MetricsHandler) GetRecallQuality(c echo.Context) error {
+    userID := c.Get("user_id").(string)
+    ctx := c.Request().Context()
+
+    daysStr := c.QueryParam("days")
+    days := 7
+    if daysStr != "" {
+        if d, err := strconv.Atoi(daysStr); err == nil && d > 0 && d <= 90 {
+            days = d
+        }
+    }
+
+    query := `
+        SELECT 
+            DATE(reviewed_at) as date,
+            COUNT(*) as total_reviews,
+            COUNT(*) FILTER (WHERE rating IN ('GOOD', 'EASY')) as successful_reviews,
+            CASE 
+                WHEN COUNT(*) > 0 
+                THEN ROUND(COUNT(*) FILTER (WHERE rating IN ('GOOD', 'EASY')) * 100.0 / COUNT(*), 1)
+                ELSE 0 
+            END as recall_rate
+        FROM review_logs
+        WHERE user_id = $1 
+          AND reviewed_at >= CURRENT_DATE - $2::int
+        GROUP BY DATE(reviewed_at)
+        ORDER BY date ASC
+    `
+
+    var dataPoints []dto.RecallDataPoint
+    if err := h.DB.Db.SelectContext(ctx, &dataPoints, query, userID, days); err != nil {
+        return echo.NewHTTPError(
+            http.StatusInternalServerError,
+            "failed to fetch recall quality data",
+        )
+    }
+
+    return c.JSON(http.StatusOK, dataPoints)
+}
+```
+
+### Response format
+
+```json
+[
+  {
+    "date": "2026-03-01",
+    "total_reviews": 12,
+    "successful_reviews": 9,
+    "recall_rate": 75.0
+  },
+  {
+    "date": "2026-03-02",
+    "total_reviews": 8,
+    "successful_reviews": 7,
+    "recall_rate": 87.5
+  }
+]
+```
+
+<Tip>
+  A healthy recall rate is 70-85%. Below 70% means you're reviewing too infrequently. Above 85% means you might be reviewing too often.
+</Tip>
+
+## Topic mastery radar chart
+
+The radar chart visualizes your mastery level across different concepts:
+
+### Mastery score formula
+
+Mastery is a composite score (0-100) calculated from:
+
+```
+Mastery = (Retention Rate × 0.5) + (Normalized Ease × 0.3) + (Normalized Interval × 0.2)
+```
+
+Where:
+- **Retention rate**: % of successful reviews for this concept
+- **Normalized ease**: Average ease factor scaled to 0-100 (3.0 = 100)
+- **Normalized interval**: Average interval scaled to 0-100 (30 days = 100)
+
+### Backend implementation
+
+```go algomind-backend/internal/handlers/metrics.go
+query := `
+    WITH problem_stats AS (
+        SELECT 
+            p.concept_id,
+            rs.ease_factor,
+            rs.interval_days
+        FROM problems p
+        JOIN review_states rs ON rs.entity_id = p.id 
+          AND rs.entity_type = 'problem' 
+          AND rs.user_id = $1
+        WHERE p.user_id = $1
+    ),
+    retention_stats AS (
+        SELECT 
+            p.concept_id,
+            COUNT(*) as total_reviews,
+            COUNT(*) FILTER (WHERE rl.rating IN ('GOOD', 'EASY')) as successful_reviews
+        FROM problems p
+        JOIN review_logs rl ON rl.entity_id = p.id 
+          AND rl.entity_type = 'problem' 
+          AND rl.user_id = $1
+        WHERE p.user_id = $1
+        GROUP BY p.concept_id
+    )
+    SELECT 
+        c.id as concept_id,
+        c.title as concept_title,
+        COUNT(DISTINCT ps.concept_id) as problem_count,
+        COALESCE(ROUND(AVG(ps.ease_factor)::numeric, 2), 0) as avg_ease,
+        COALESCE(ROUND(AVG(ps.interval_days)::numeric, 1), 0) as avg_interval,
+        COALESCE(
+            CASE 
+                WHEN rs.total_reviews > 0 
+                THEN ROUND(rs.successful_reviews * 100.0 / rs.total_reviews, 1)
+                ELSE 0 
+            END, 0
+        ) as retention_rate,
+        COALESCE(
+            LEAST(100, GREATEST(0,
+                (CASE WHEN rs.total_reviews > 0 THEN rs.successful_reviews * 100.0 / rs.total_reviews ELSE 0 END) * 0.5 +
+                (LEAST(AVG(ps.ease_factor), 3.0) / 3.0 * 100) * 0.3 +
+                (LEAST(AVG(ps.interval_days), 30) / 30.0 * 100) * 0.2
+            ))::int, 0
+        ) as mastery_score
+    FROM concepts c
+    LEFT JOIN problem_stats ps ON ps.concept_id = c.id
+    LEFT JOIN retention_stats rs ON rs.concept_id = c.id
+    WHERE (c.user_id IS NULL OR c.user_id = $1) 
+      AND EXISTS (
+        SELECT 1 FROM problems p 
+        WHERE p.concept_id = c.id AND p.user_id = $1
+    )
+    GROUP BY c.id, c.title, rs.total_reviews, rs.successful_reviews
+    ORDER BY mastery_score DESC
+`
+```
+
+### Response structure
+
+```typescript
+interface TopicMastery {
+  concept_id: number
+  concept_title: string
+  problem_count: number      // Problems you have for this concept
+  avg_ease: number           // Average ease factor (1.3 - 3.0+)
+  avg_interval: number       // Average days between reviews
+  retention_rate: number     // % of successful reviews
+  mastery_score: number      // Composite score (0-100)
+}
+```
+
+<Note>
+  Only concepts with at least one problem appear in the mastery chart.
+</Note>
+
+## Interpreting your metrics
+
+### High mastery score (80-100)
+
+- Long average intervals (20+ days)
+- High retention rate (85%+)
+- High ease factor (2.5+)
+
+**Action**: Consider adding more challenging problems from this concept or reducing review frequency.
+
+### Medium mastery score (50-79)
+
+- Moderate intervals (7-20 days)
+- Good retention (70-85%)
+- Moderate ease (2.0-2.5)
+
+**Action**: Continue current review cadence. This is healthy progress.
+
+### Low mastery score (0-49)
+
+- Short intervals (< 7 days)
+- Poor retention (< 70%)
+- Low ease factor (< 2.0)
+
+**Action**: Study the concept theory before reviews. Consider adding easier problems to build confidence.
+
+<Warning>
+  Don't chase high mastery scores by rating problems as "EASY" when they're not. Honest ratings lead to better learning outcomes.
+</Warning>
+
+## Review queue card
+
+The queue card shows:
+
+- Problems due today
+- Problems due this week
+- Overdue problems (in red)
+
+Click the card to navigate directly to the review page.
+
+## Dashboard layout
+
+```tsx algomind-frontend/app/dashboard/page.tsx
+export default function DashboardPage() {
+    const { data } = useDashboardMetrics()
+
+    return (
+        <div className="min-h-screen">
+            <div className="relative border-b">
+                <div className="relative mx-auto max-w-7xl px-6 py-12 lg:px-8">
+                    <HeadingSection {...FeaturePagesHeaderInfo.dashboard} />
+                    
+                    {/* Quick Stats */}
+                    <div className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-4">
+                        {/* Four stat cards */}
+                    </div>
+                </div>
+            </div>
+
+            <div className="mx-auto max-w-7xl px-6 py-8 lg:px-8">
+                {/* Queue and Streak Cards */}
+                <div className="grid gap-6 md:grid-cols-2 lg:gap-8">
+                    <QueueCard />
+                    <StreakCard />
+                </div>
+
+                {/* Charts */}
+                <div className="mt-6 grid gap-6 md:grid-cols-2 lg:gap-8">
+                    <ChartLineLinear />   {/* Recall quality */}
+                    <ChartRadarDefault /> {/* Topic mastery */}
+                </div>
+            </div>
+        </div>
+    )
+}
+```
+
+## Real-time updates
+
+Metrics update automatically:
+
+- **After completing a review**: Streak, due count, and charts update
+- **After adding a problem**: Total problems count updates
+- **At midnight**: Current date changes, affecting "due today" and "reviewed today"
+
+<Info>
+  The frontend polls the metrics endpoint every 60 seconds when the dashboard is open to ensure data freshness.
+</Info>
+
+## Best practices
+
+<Accordion title="How often should I check the dashboard?">
+  Daily! Start your study session by reviewing:
+  1. How many problems are due
+  2. Your current streak status
+  3. Which concepts need attention (low mastery scores)
+  
+  This 30-second review helps you prioritize your study time.
+</Accordion>
+
+<Accordion title="What's a good recall rate target?">
+  Aim for 75-80% recall rate over a 30-day period:
+  - **Below 70%**: You're challenging yourself too much or reviewing too infrequently
+  - **75-85%**: Optimal difficulty—you're learning efficiently
+  - **Above 90%**: You're reviewing too conservatively—increase difficulty
+</Accordion>
+
+<Accordion title="Should I focus on low mastery concepts?">
+  Yes, but strategically:
+  1. Review the concept theory first
+  2. Add 2-3 easier problems from that concept
+  3. Build mastery gradually before adding harder problems
+  
+  Don't just spam reviews on low-mastery concepts—understand WHY the mastery is low.
+</Accordion>
+
+## Related features
+
+<CardGroup cols={2}>
+  <Card title="Spaced repetition" icon="brain" href="/features/spaced-repetition">
+    Learn how the algorithm calculates intervals
+  </Card>
+  <Card title="Concept library" icon="book" href="/features/concept-library">
+    Understand concept organization and tracking
+  </Card>
+</CardGroup>

@@ -1,0 +1,532 @@
+---
+title: Database schema
+description: Complete PostgreSQL database schema for Algomind including tables, columns, relationships, and indexes
+---
+
+## Overview
+
+Algomind uses PostgreSQL 15 with 7 core tables to implement spaced repetition learning, user management, and concept organization. The schema is managed through golang-migrate migrations.
+
+<Info>
+  All migrations are located in `algomind-backend/migrations/` and run automatically on deployment via the `entrypoint.sh` script.
+</Info>
+
+## Schema diagram
+
+```
+┌─────────────┐
+│    users    │
+└──────┬──────┘
+       │
+       ├───────────────────┐
+       │                   │
+       ▼                   ▼
+┌─────────────┐     ┌──────────────┐
+│  concepts   │────▶│   problems   │
+└──────┬──────┘     └───────┬──────┘
+       │                    │
+       ├────────────────────┤
+       ▼                    ▼
+┌──────────────────────────────┐
+│      review_states           │
+└──────────────┬───────────────┘
+               │
+               ▼
+       ┌──────────────┐
+       │ review_logs  │
+       └──────────────┘
+
+┌──────────────────┐     ┌──────────────────────┐
+│concept_folders   │────▶│concept_folder_items  │
+└──────────────────┘     └──────────────────────┘
+```
+
+## Core tables
+
+### users
+
+Stores user accounts synced from Clerk authentication. Created on first login.
+
+```sql
+CREATE TABLE users (
+    id TEXT PRIMARY KEY,                    -- Clerk user ID
+    current_streak INT NOT NULL DEFAULT 0,  -- Current daily review streak
+    longest_streak INT NOT NULL DEFAULT 0,  -- All-time longest streak
+    last_review_date DATE,                  -- Last date user reviewed
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+#### Columns
+
+<Accordion title="id (TEXT, PRIMARY KEY)">
+  - Clerk user ID (e.g., `user_2abc123def456`)
+  - Unique identifier from Clerk authentication
+  - Referenced by all other user-owned tables
+  - Not auto-generated - set by Clerk
+</Accordion>
+
+<Accordion title="current_streak (INT)">
+  - Number of consecutive days with at least one review
+  - Incremented when user reviews on a new day
+  - Reset to 0 if user misses a day
+  - Used for gamification on dashboard
+</Accordion>
+
+<Accordion title="longest_streak (INT)">
+  - All-time highest streak achieved
+  - Updated when `current_streak` exceeds `longest_streak`
+  - Never decreases
+</Accordion>
+
+<Accordion title="last_review_date (DATE, nullable)">
+  - Date of most recent review (YYYY-MM-DD)
+  - Used to calculate streak continuity
+  - NULL for new users who haven't reviewed yet
+</Accordion>
+
+<Accordion title="created_at (TIMESTAMPTZ)">
+  - When user record was created
+  - Matches Clerk sign-up time
+</Accordion>
+
+### concepts
+
+Stores algorithm and data structure concepts. Supports both system-wide concepts and user-created custom concepts.
+
+```sql
+CREATE TABLE concepts (
+    id BIGSERIAL PRIMARY KEY,
+    user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+    base_concept_id BIGINT REFERENCES concepts(id) ON DELETE SET NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    content TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- System concepts: unique by title
+CREATE UNIQUE INDEX idx_concepts_system_title 
+    ON concepts (title) WHERE user_id IS NULL;
+
+-- User concepts: one override per base concept per user
+CREATE UNIQUE INDEX idx_concepts_user_override 
+    ON concepts (user_id, base_concept_id) 
+    WHERE user_id IS NOT NULL AND base_concept_id IS NOT NULL;
+
+CREATE INDEX idx_concepts_user_id ON concepts (user_id);
+```
+
+#### Columns
+
+<Accordion title="id (BIGSERIAL, PRIMARY KEY)">
+  - Auto-incrementing unique identifier
+  - Referenced by `problems.concept_id`
+</Accordion>
+
+<Accordion title="user_id (TEXT, nullable, FK → users.id)">
+  - NULL for system concepts (admin-managed)
+  - Set for user-created custom concepts
+  - Enables concept customization per user
+</Accordion>
+
+<Accordion title="base_concept_id (BIGINT, nullable, FK → concepts.id)">
+  - NULL for system concepts
+  - Points to system concept for user overrides
+  - Allows users to customize existing concepts
+</Accordion>
+
+<Accordion title="title (TEXT)">
+  - Concept name (e.g., "Sliding Window", "Binary Search")
+  - Must be unique for system concepts
+  - Can be customized for user concepts
+</Accordion>
+
+<Accordion title="description (TEXT, nullable)">
+  - Brief summary shown in concept lists
+  - Optional field
+</Accordion>
+
+<Accordion title="content (TEXT)">
+  - Full explanation with examples, patterns, and tips
+  - Supports Markdown
+  - Displayed on concept detail page
+</Accordion>
+
+### problems
+
+User-added LeetCode problems or custom practice items, linked to concepts.
+
+```sql
+CREATE TABLE problems (
+    id BIGSERIAL PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    concept_id BIGINT NOT NULL REFERENCES concepts(id) ON DELETE CASCADE,
+    
+    title TEXT NOT NULL,
+    link TEXT,
+    difficulty TEXT NOT NULL CHECK (difficulty IN ('EASY', 'MEDIUM', 'HARD')),
+    
+    summary TEXT NOT NULL,
+    description TEXT,
+    answer TEXT NOT NULL,
+    answer_language TEXT,
+    hints TEXT,
+    
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_problems_user_id ON problems (user_id);
+CREATE INDEX idx_problems_concept_id ON problems (concept_id);
+```
+
+#### Columns
+
+<Accordion title="id (BIGSERIAL, PRIMARY KEY)">
+  - Auto-incrementing unique identifier
+  - Referenced by `review_states` and `review_logs`
+</Accordion>
+
+<Accordion title="user_id (TEXT, FK → users.id)">
+  - Owner of this problem
+  - Problems are private to each user
+  - CASCADE delete when user is deleted
+</Accordion>
+
+<Accordion title="concept_id (BIGINT, FK → concepts.id)">
+  - Which concept this problem belongs to
+  - Used for grouping and mastery tracking
+  - CASCADE delete when concept is deleted
+</Accordion>
+
+<Accordion title="title (TEXT)">
+  - Problem name (e.g., "Two Sum", "Longest Substring")
+  - Fetched from LeetCode API when available
+</Accordion>
+
+<Accordion title="link (TEXT, nullable)">
+  - URL to the problem (typically LeetCode)
+  - Example: `https://leetcode.com/problems/two-sum/`
+  - Optional for custom problems
+</Accordion>
+
+<Accordion title="difficulty (TEXT, CHECK constraint)">
+  - Must be `EASY`, `MEDIUM`, or `HARD`
+  - Fetched from LeetCode or set by user
+  - Used for filtering and stats
+</Accordion>
+
+<Accordion title="summary (TEXT)">
+  - Brief explanation of solution approach
+  - User-written
+  - Shown in problem lists
+</Accordion>
+
+<Accordion title="description (TEXT, nullable)">
+  - Full problem statement
+  - Fetched from LeetCode or written by user
+  - Optional field
+</Accordion>
+
+<Accordion title="answer (TEXT)">
+  - Solution code
+  - User-written
+  - Supports syntax highlighting in frontend
+</Accordion>
+
+<Accordion title="answer_language (TEXT, nullable)">
+  - Programming language of solution (e.g., `python`, `javascript`, `go`)
+  - Added in migration 000007
+  - Used for syntax highlighting
+</Accordion>
+
+<Accordion title="hints (TEXT, nullable)">
+  - Step-by-step hints for solving
+  - User-written
+  - Shown during review before revealing answer
+</Accordion>
+
+### review_states
+
+Tracks spaced repetition state for each user's problems and concepts. Core of the SRS engine.
+
+```sql
+CREATE TABLE review_states (
+    id BIGSERIAL PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    
+    entity_type TEXT NOT NULL CHECK (entity_type IN ('concept', 'problem')),
+    entity_id BIGINT NOT NULL,
+    
+    next_review_at TIMESTAMPTZ NOT NULL,
+    interval_days INT NOT NULL,
+    ease_factor FLOAT NOT NULL,
+    streak INT NOT NULL,
+    
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    
+    UNIQUE (user_id, entity_type, entity_id)
+);
+
+CREATE INDEX idx_review_states_due 
+    ON review_states (user_id, next_review_at);
+```
+
+#### Columns
+
+<Accordion title="id (BIGSERIAL, PRIMARY KEY)">
+  - Auto-incrementing unique identifier
+</Accordion>
+
+<Accordion title="user_id (TEXT, FK → users.id)">
+  - Which user this state belongs to
+  - Each user has independent review schedules
+</Accordion>
+
+<Accordion title="entity_type (TEXT, CHECK constraint)">
+  - Must be `concept` or `problem`
+  - Determines which table `entity_id` references
+</Accordion>
+
+<Accordion title="entity_id (BIGINT)">
+  - ID of the concept or problem being reviewed
+  - Not a foreign key (polymorphic relationship)
+  - Combined with `entity_type` to identify the item
+</Accordion>
+
+<Accordion title="next_review_at (TIMESTAMPTZ)">
+  - When this item is due for review
+  - Items with `next_review_at <= now()` appear in queue
+  - Updated after each review based on rating
+</Accordion>
+
+<Accordion title="interval_days (INT)">
+  - Days until next review
+  - Increases on successful reviews (Good/Easy)
+  - Resets to 1 on failed reviews (Again)
+  - Modified by difficulty rating (Hard/Good/Easy)
+</Accordion>
+
+<Accordion title="ease_factor (FLOAT)">
+  - Multiplier for interval growth
+  - Starts at 2.5 for new items
+  - Increases on Easy (×1.3)
+  - Decreases on Again (×0.8) and Hard (×0.85)
+  - Minimum: 1.3
+</Accordion>
+
+<Accordion title="streak (INT)">
+  - Consecutive successful reviews
+  - Increments on Good/Easy
+  - Resets to 0 on Again
+</Accordion>
+
+<Warning>
+  The UNIQUE constraint `(user_id, entity_type, entity_id)` ensures each user has exactly one review state per item.
+</Warning>
+
+### review_logs
+
+Complete history of all review sessions. Used for analytics and heatmaps.
+
+```sql
+CREATE TABLE review_logs (
+    id BIGSERIAL PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    
+    entity_type TEXT NOT NULL CHECK (entity_type IN ('concept', 'problem')),
+    entity_id BIGINT NOT NULL,
+    
+    rating TEXT NOT NULL CHECK (rating IN ('AGAIN', 'HARD', 'GOOD', 'EASY')),
+    reviewed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_review_logs_user_time 
+    ON review_logs (user_id, reviewed_at);
+
+CREATE INDEX idx_review_logs_entity 
+    ON review_logs (user_id, entity_type, entity_id);
+```
+
+#### Columns
+
+<Accordion title="id (BIGSERIAL, PRIMARY KEY)">
+  - Auto-incrementing unique identifier
+</Accordion>
+
+<Accordion title="user_id (TEXT, FK → users.id)">
+  - Who performed this review
+</Accordion>
+
+<Accordion title="entity_type (TEXT, CHECK constraint)">
+  - Must be `concept` or `problem`
+</Accordion>
+
+<Accordion title="entity_id (BIGINT)">
+  - ID of reviewed concept or problem
+</Accordion>
+
+<Accordion title="rating (TEXT, CHECK constraint)">
+  - User's self-assessment: `AGAIN`, `HARD`, `GOOD`, or `EASY`
+  - Used to calculate next interval and ease factor
+  - **AGAIN**: Couldn't recall, start over
+  - **HARD**: Difficult recall, slight interval increase
+  - **GOOD**: Normal recall, standard interval increase
+  - **EASY**: Perfect recall, large interval increase
+</Accordion>
+
+<Accordion title="reviewed_at (TIMESTAMPTZ)">
+  - When review was completed
+  - Used for streaks, charts, and heatmaps
+</Accordion>
+
+<Info>
+  Migration 000002 added `HARD` rating option to the original `AGAIN/GOOD/EASY` set.
+</Info>
+
+## Folder organization tables
+
+Added in migration 000009 to support hierarchical concept organization.
+
+### concept_folders
+
+User-created folders for organizing concepts.
+
+```sql
+CREATE TABLE concept_folders (
+    id BIGSERIAL PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    parent_folder_id BIGINT REFERENCES concept_folders(id) ON DELETE CASCADE,
+    sort_order INT NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (user_id, parent_folder_id, name)
+);
+```
+
+#### Columns
+
+<Accordion title="id (BIGSERIAL, PRIMARY KEY)">
+  - Auto-incrementing unique identifier
+</Accordion>
+
+<Accordion title="user_id (TEXT, FK → users.id)">
+  - Folder owner
+  - Folders are private to each user
+</Accordion>
+
+<Accordion title="name (TEXT)">
+  - Folder name (e.g., "Arrays & Strings", "Advanced DP")
+  - Must be unique within parent folder per user
+</Accordion>
+
+<Accordion title="parent_folder_id (BIGINT, nullable, FK → concept_folders.id)">
+  - NULL for root-level folders
+  - Set to create nested folder structure
+  - CASCADE delete when parent is deleted
+</Accordion>
+
+<Accordion title="sort_order (INT)">
+  - Display order within parent folder
+  - Lower numbers appear first
+  - User-controlled via drag-and-drop
+</Accordion>
+
+### concept_folder_items
+
+Links concepts to folders.
+
+```sql
+CREATE TABLE concept_folder_items (
+    id BIGSERIAL PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    folder_id BIGINT NOT NULL REFERENCES concept_folders(id) ON DELETE CASCADE,
+    concept_id BIGINT NOT NULL REFERENCES concepts(id) ON DELETE CASCADE,
+    sort_order INT NOT NULL DEFAULT 0,
+    UNIQUE (user_id, concept_id)
+);
+
+CREATE INDEX idx_concept_folder_items_folder 
+    ON concept_folder_items (folder_id);
+```
+
+#### Columns
+
+<Accordion title="folder_id (BIGINT, FK → concept_folders.id)">
+  - Which folder contains this concept
+  - CASCADE delete when folder is deleted
+</Accordion>
+
+<Accordion title="concept_id (BIGINT, FK → concepts.id)">
+  - Which concept is in this folder
+  - CASCADE delete when concept is deleted
+</Accordion>
+
+<Accordion title="sort_order (INT)">
+  - Display order within folder
+</Accordion>
+
+<Warning>
+  The UNIQUE constraint `(user_id, concept_id)` ensures each concept appears in at most one folder per user.
+</Warning>
+
+## Indexes
+
+Performance indexes added in migration 000004:
+
+<Card title="Query optimization" icon="gauge">
+  - **idx_review_states_due**: Fast queue queries `WHERE user_id = $1 AND next_review_at <= now()`
+  - **idx_review_logs_user_time**: Analytics queries by date range
+  - **idx_review_logs_entity**: Review history for specific items
+  - **idx_problems_user_id**: Fetch all user problems
+  - **idx_problems_concept_id**: Fetch problems by concept
+  - **idx_concepts_user_id**: Fetch user custom concepts
+  - **idx_concept_folder_items_folder**: Fetch folder contents
+</Card>
+
+## Relationships
+
+```
+users (1) ──────< (many) problems
+users (1) ──────< (many) concepts (custom only)
+users (1) ──────< (many) review_states
+users (1) ──────< (many) review_logs
+users (1) ──────< (many) concept_folders
+
+concepts (1) ───< (many) problems
+concepts (1) ───< (many) concepts (base_concept_id, self-reference)
+
+concept_folders (1) ──< (many) concept_folder_items
+concepts (1) ───────────< (many) concept_folder_items
+```
+
+## Migration management
+
+Migrations run automatically on deployment via `entrypoint.sh`:
+
+```bash
+migrate -path /app/migrations -database "$DATABASE_URL" up
+```
+
+<Accordion title="Run migrations locally">
+  ```bash
+  cd algomind-backend
+  migrate -path ./migrations -database "$DATABASE_URL" up
+  ```
+</Accordion>
+
+<Accordion title="Rollback last migration">
+  ```bash
+  migrate -path ./migrations -database "$DATABASE_URL" down 1
+  ```
+</Accordion>
+
+<Accordion title="Check migration version">
+  ```bash
+  migrate -path ./migrations -database "$DATABASE_URL" version
+  ```
+</Accordion>
+
+<Note>
+  All migration files are located in `algomind-backend/migrations/` with naming pattern `000XXX_description.up.sql` and `000XXX_description.down.sql`.
+</Note>

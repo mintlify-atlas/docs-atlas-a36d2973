@@ -1,0 +1,89 @@
+---
+title: Introduction
+description: Learn what Algomind is, why it exists, and how it helps software engineers master algorithms through spaced repetition
+---
+
+Algomind is a spaced repetition study tool built specifically for software engineers preparing for coding interviews. It helps you track LeetCode problems and algorithm concepts over time using an adaptive review schedule based on your past performance.
+
+## Why Algomind exists
+
+The core idea is simple: instead of grinding the same problems randomly, Algomind schedules each problem for review at the right time based on your past performance — before you forget it, not after.
+
+Traditional interview prep often involves:
+- Solving problems once and never reviewing them
+- Random practice without a system
+- Forgetting solutions weeks later
+- Inefficient time allocation
+
+Algomind fixes this by applying **spaced repetition**, a learning technique proven to improve long-term retention by scheduling reviews at optimal intervals.
+
+## Key features
+
+<CardGroup cols={2}>
+  <Card title="SM-2 spaced repetition engine" icon="brain">
+    When you complete a review, you rate your recall (Again / Hard / Good / Easy). The next review date is calculated using a variant of the SM-2 algorithm, adjusting the interval and ease factor per problem based on your history.
+  </Card>
+
+  <Card title="LeetCode auto-fetch" icon="link">
+    Paste a LeetCode problem URL and the backend fetches the title, difficulty, and problem description automatically. You add your own solution notes and hints on top.
+  </Card>
+
+  <Card title="Concept library" icon="book">
+    Problems are linked to concepts (e.g. Sliding Window, Dynamic Programming, Graphs). The concepts page lets you study the theory before reviewing the associated problems.
+  </Card>
+
+  <Card title="Dashboard metrics" icon="chart-line">
+    Shows your current review queue size, today's streak, problems due, and charts for recall quality over the past 7/30 days and topic-level mastery across concept categories.
+  </Card>
+</CardGroup>
+
+## Who is Algomind for?
+
+Algomind is designed for:
+
+- **Software engineers** preparing for technical interviews at FAANG and other tech companies
+- **Students** learning data structures and algorithms systematically
+- **Career switchers** building a strong foundation in computer science fundamentals
+- **Anyone** who wants to maintain their coding skills over time without forgetting what they've learned
+
+<Info>
+  Algomind works best when you commit to reviewing problems on schedule. The spaced repetition algorithm only works if you show up consistently.
+</Info>
+
+## Architecture overview
+
+Algomind is built as a modern web application with separate frontend and backend services:
+
+<Steps>
+  <Step title="Frontend — Next.js 15">
+    React-based UI with App Router, Clerk authentication, TanStack Query for data fetching, and shadcn/ui components. Deployed as a standalone Docker container.
+  </Step>
+
+  <Step title="Backend — Go Echo">
+    RESTful API built with Echo v4 framework, JWT authentication via Clerk SDK, and structured logging with zerolog. Handles all business logic and spaced repetition calculations.
+  </Step>
+
+  <Step title="Database — PostgreSQL 15">
+    Stores users, concepts, problems, review states, and review logs. Uses golang-migrate for schema versioning. Migrations run automatically on container startup.
+  </Step>
+</Steps>
+
+<Tip>
+  Want to dive deeper into the technical architecture? Check out the [architecture](/architecture) page for detailed implementation details.
+</Tip>
+
+## Tech stack at a glance
+
+| Layer | Technology |
+|---|---|
+| Frontend | Next.js 15, React, Tailwind CSS, shadcn/ui |
+| Auth | Clerk |
+| Data fetching | TanStack Query |
+| Backend | Go, Echo v4 |
+| Database | PostgreSQL 15 |
+| Migrations | golang-migrate |
+| Deployment | Docker, Dokploy, Traefik |
+
+## Getting started
+
+Ready to run Algomind locally? Head over to the [quickstart guide](/quickstart) for step-by-step setup instructions.

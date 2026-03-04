@@ -1,97 +1,197 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: Master algorithms through spaced repetition
+description: Algomind helps software engineers retain LeetCode problems and algorithm concepts using science-backed review scheduling
+mode: custom
 ---
 
-## Setting up
+<div className="relative overflow-hidden bg-gradient-to-br from-[#6366f1] via-[#4f46e5] to-[#4338ca] dark:from-[#4f46e5] dark:via-[#4338ca] dark:to-[#3730a3] py-20">
+  <div className="max-w-6xl mx-auto px-6 sm:px-8">
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+      <div className="lg:col-span-7">
+        <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-white mb-6">
+          Master algorithms through spaced repetition
+        </h1>
+        <p className="text-lg sm:text-xl text-indigo-100 mb-8 max-w-2xl">
+          Stop grinding problems randomly. Algomind schedules your LeetCode reviews at the optimal time — before you forget, not after. Built for engineers who want to retain what they learn.
+        </p>
+        <div className="flex flex-wrap gap-4">
+          <a
+            href="/quickstart"
+            className="inline-flex items-center px-6 py-3 rounded-lg bg-white text-[#6366f1] font-semibold hover:bg-gray-50 transition-colors"
+          >
+            Get started
+            <svg className="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </a>
+          <a
+            href="/architecture"
+            className="inline-flex items-center px-6 py-3 rounded-lg border-2 border-white/30 bg-white/10 text-white font-semibold hover:bg-white/20 transition-colors"
+          >
+            View architecture
+          </a>
+        </div>
+      </div>
+      <div className="lg:col-span-5 hidden lg:block">
+        <div className="relative">
+          <div className="absolute inset-0 bg-gradient-to-tr from-indigo-500/20 to-purple-500/20 rounded-2xl blur-3xl"></div>
+          <div className="relative bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-6">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-indigo-100 font-medium">Review Queue</span>
+                <span className="px-3 py-1 rounded-full bg-white/20 text-white text-sm font-semibold">12 due</span>
+              </div>
+              <div className="space-y-3">
+                <div className="bg-white/10 rounded-lg p-3 border border-white/20">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-white font-medium">Two Sum</span>
+                    <span className="px-2 py-0.5 rounded text-xs font-semibold bg-green-500/20 text-green-200">Easy</span>
+                  </div>
+                  <span className="text-indigo-200 text-sm">Due today</span>
+                </div>
+                <div className="bg-white/10 rounded-lg p-3 border border-white/20">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-white font-medium">Longest Substring</span>
+                    <span className="px-2 py-0.5 rounded text-xs font-semibold bg-yellow-500/20 text-yellow-200">Medium</span>
+                  </div>
+                  <span className="text-indigo-200 text-sm">Due in 2 days</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 
-Get your documentation site up and running in minutes.
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="text-center mb-12">
+    <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">Get started in minutes</h2>
+    <p className="text-lg text-gray-600 dark:text-gray-400">Follow these steps to start building your algorithm mastery</p>
+  </div>
 
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
+  <Steps>
+    <Step title="Sign up with Google">
+      Create your account using Google OAuth through Clerk authentication. Your data is private and synced across devices.
+      
+      ```bash
+      # Frontend runs on localhost:3000
+      # Backend API on localhost:8080
+      ```
+    </Step>
+    
+    <Step title="Add your first problem">
+      Paste any LeetCode URL and Algomind automatically fetches the title, difficulty, and problem description. Add your solution notes and hints.
+      
+      ```json
+      {
+        "title": "Two Sum",
+        "difficulty": "EASY",
+        "link": "https://leetcode.com/problems/two-sum/",
+        "concept_id": 1
+      }
+      ```
+    </Step>
+    
+    <Step title="Complete your first review">
+      Rate your recall (Again / Hard / Good / Easy). The SM-2 algorithm calculates your next review date based on performance history.
+      
+      <Info>
+        The algorithm adapts to your performance. Problems you find easy are spaced further apart, while difficult ones return sooner.
+      </Info>
+    </Step>
+    
+    <Step title="Track your progress">
+      View your dashboard to see streak tracking, problems due today, recall quality charts over 7/30 days, and topic-level mastery across algorithm categories.
+    </Step>
+  </Steps>
+</div>
 
-## Make it yours
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="text-center mb-12">
+    <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">Core features</h2>
+    <p className="text-lg text-gray-600 dark:text-gray-400">Everything you need to retain algorithms long-term</p>
+  </div>
 
-Design a docs site that looks great and empowers your users.
+  <CardGroup cols={2}>
+    <Card title="Spaced repetition engine" icon="brain" href="/features/spaced-repetition">
+      SM-2 algorithm adjusts intervals and ease factors based on your recall history. Never forget a pattern again.
+    </Card>
+    <Card title="LeetCode auto-fetch" icon="download" href="/features/leetcode-autofetch">
+      Paste a LeetCode URL and instantly fetch problem metadata. Focus on learning, not data entry.
+    </Card>
+    <Card title="Concept library" icon="book" href="/features/concept-library">
+      Link problems to algorithm topics like Sliding Window, DP, and Graphs. Study theory before reviewing problems.
+    </Card>
+    <Card title="Dashboard metrics" icon="chart-line" href="/features/dashboard-metrics">
+      Track your streak, review queue size, recall quality trends, and topic mastery across concept categories.
+    </Card>
+  </CardGroup>
+</div>
 
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
-  </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
-  </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
-  </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
-  </Card>
-</Columns>
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="text-center mb-12">
+    <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">Explore by topic</h2>
+    <p className="text-lg text-gray-600 dark:text-gray-400">Jump to what you need</p>
+  </div>
 
-## Create beautiful pages
+  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <a href="/guides/adding-problems" className="group block rounded-2xl border border-gray-200 dark:border-[#27272a] hover:border-[#6366f1] dark:hover:border-[#6366f1] overflow-hidden bg-white dark:bg-[#1a1d27] transition-colors no-underline">
+      <div className="p-6">
+        <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 mb-2">Adding problems</h3>
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">Learn how to add LeetCode problems and link them to concepts</p>
+        <span className="text-sm font-medium text-[#6366f1] group-hover:text-[#4f46e5] inline-flex items-center">
+          Read guide
+          <svg className="ml-1 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </span>
+      </div>
+    </a>
 
-Everything you need to create world-class documentation.
+    <a href="/guides/reviewing-problems" className="group block rounded-2xl border border-gray-200 dark:border-[#27272a] hover:border-[#6366f1] dark:hover:border-[#6366f1] overflow-hidden bg-white dark:bg-[#1a1d27] transition-colors no-underline">
+      <div className="p-6">
+        <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 mb-2">Reviewing problems</h3>
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">Understand the review process and rating system</p>
+        <span className="text-sm font-medium text-[#6366f1] group-hover:text-[#4f46e5] inline-flex items-center">
+          Read guide
+          <svg className="ml-1 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </span>
+      </div>
+    </a>
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+    <a href="/api/authentication" className="group block rounded-2xl border border-gray-200 dark:border-[#27272a] hover:border-[#6366f1] dark:hover:border-[#6366f1] overflow-hidden bg-white dark:bg-[#1a1d27] transition-colors no-underline">
+      <div className="p-6">
+        <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 mb-2">API reference</h3>
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">Explore the REST API for building integrations</p>
+        <span className="text-sm font-medium text-[#6366f1] group-hover:text-[#4f46e5] inline-flex items-center">
+          View API docs
+          <svg className="ml-1 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </span>
+      </div>
+    </a>
+  </div>
+</div>
 
-## Need inspiration?
-
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+<div className="mt-20 mb-16 max-w-5xl mx-auto px-6">
+  <div className="rounded-2xl bg-gradient-to-r from-[#6366f1] to-[#4f46e5] p-8 sm:p-12 text-center">
+    <h2 className="text-3xl font-bold text-white mb-4">Ready to start learning?</h2>
+    <p className="text-lg text-indigo-100 mb-8 max-w-2xl mx-auto">
+      Set up Algomind locally in under 5 minutes and start building your algorithm mastery today
+    </p>
+    <a
+      href="/quickstart"
+      className="inline-flex items-center px-6 py-3 rounded-lg bg-white text-[#6366f1] font-semibold hover:bg-gray-50 transition-colors"
+    >
+      Get started now
+      <svg className="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+      </svg>
+    </a>
+  </div>
+</div>

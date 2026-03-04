@@ -1,0 +1,353 @@
+---
+title: Authentication
+description: Learn how to authenticate your API requests using Clerk JWT tokens
+---
+
+## Overview
+
+Algomind API uses [Clerk](https://clerk.com) for authentication. All API endpoints under `/api/v1` require a valid JWT token in the Authorization header. The token contains your user identity and is verified on each request using Clerk's JWT verification system.
+
+## How authentication works
+
+The authentication flow follows these steps:
+
+1. User authenticates with Clerk on the frontend
+2. Clerk issues a JWT token containing the user's identity
+3. Client includes the token in the `Authorization` header as a Bearer token
+4. Algomind's auth middleware verifies the token using Clerk's SDK
+5. If valid, the user ID is extracted and the request proceeds
+6. User is automatically created in Algomind's database on first request
+
+## Token format
+
+Algomind expects JWT tokens in the standard Bearer format:
+
+```
+Authorization: Bearer <your-clerk-jwt-token>
+```
+
+The JWT token is issued by Clerk and contains claims including the user's ID (`sub` claim), which is used to identify the user throughout the API.
+
+## Making authenticated requests
+
+Include your Clerk JWT token in the Authorization header of every API request:
+
+<CodeGroup>
+
+```bash cURL
+curl https://api.algomind.pro/api/v1/profile \
+  -H "Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+```javascript JavaScript
+const response = await fetch('https://api.algomind.pro/api/v1/profile', {
+  headers: {
+    'Authorization': `Bearer ${clerkToken}`,
+    'Content-Type': 'application/json'
+  }
+});
+
+const data = await response.json();
+```
+
+```python Python
+import requests
+
+headers = {
+    'Authorization': f'Bearer {clerk_token}',
+    'Content-Type': 'application/json'
+}
+
+response = requests.get(
+    'https://api.algomind.pro/api/v1/profile',
+    headers=headers
+)
+```
+
+```go Go
+client := &http.Client{}
+req, err := http.NewRequest("GET", "https://api.algomind.pro/api/v1/profile", nil)
+if err != nil {
+    log.Fatal(err)
+}
+
+req.Header.Add("Authorization", "Bearer " + clerkToken)
+req.Header.Add("Content-Type", "application/json")
+
+resp, err := client.Do(req)
+```
+
+</CodeGroup>
+
+## Token verification process
+
+When you make a request, Algomind's authentication middleware performs the following verification:
+
+1. **Extract token**: The middleware extracts the token from the `Authorization` header
+2. **Verify signature**: Uses Clerk's SDK to verify the JWT signature and expiration
+3. **Extract user ID**: Extracts the user ID from the `sub` claim in the token
+4. **Ensure user exists**: Automatically creates the user in Algomind's database if it's their first request
+5. **Attach user context**: Adds the user ID to the request context for downstream handlers
+
+The verification is implemented in `internal/middleware/auth.go:24-73`:
+
+```go
+func (am *AuthMiddleware) RequireAuth(next echo.HandlerFunc) echo.HandlerFunc {
+    return func(c echo.Context) error {
+        // 1. Get the token
+        authHeader := c.Request().Header.Get("Authorization")
+        token := strings.TrimPrefix(authHeader, "Bearer ")
+
+        if token == "" {
+            return c.JSON(http.StatusUnauthorized, 
+                map[string]string{"error": "Missing Authorization header"})
+        }
+
+        // 2. Verify the token using Clerk's JWT package
+        claims, err := jwt.Verify(c.Request().Context(), &jwt.VerifyParams{
+            Token: token,
+        })
+
+        if err != nil {
+            return c.JSON(http.StatusUnauthorized, 
+                map[string]string{"error": "Invalid Session"})
+        }
+
+        // 3. Success! claims.Subject is the User ID
+        if err := am.ensureUserExists(c, claims.Subject); err != nil {
+            return err
+        }
+
+        c.Set("user_id", claims.Subject)
+        return next(c)
+    }
+}
+```
+
+<Note>
+The Clerk secret key is configured via the `CLERK_SECRET_KEY` environment variable and must be set for the API to function.
+</Note>
+
+## Error responses
+
+The authentication middleware returns specific error responses for different failure scenarios:
+
+### Missing authorization header
+
+When no `Authorization` header is provided:
+
+```json
+{
+  "error": "Missing Authorization header"
+}
+```
+
+**HTTP Status**: `401 Unauthorized`
+
+### Invalid or expired token
+
+When the JWT token is invalid, malformed, or expired:
+
+```json
+{
+  "error": "Invalid Session"
+}
+```
+
+**HTTP Status**: `401 Unauthorized`
+
+### User sync failure
+
+When the system fails to ensure the user exists in the database:
+
+```json
+{
+  "error": "Failed to sync user"
+}
+```
+
+**HTTP Status**: `500 Internal Server Error`
+
+## Getting your Clerk token
+
+To obtain a Clerk JWT token for API requests:
+
+<Steps>
+  <Step title="Authenticate with Clerk">
+    Use Clerk's authentication methods (email/password, OAuth, etc.) in your application
+  </Step>
+  
+  <Step title="Get session token">
+    Call `getToken()` from Clerk's session object:
+    
+    ```javascript
+    import { useAuth } from '@clerk/nextjs';
+    
+    function MyComponent() {
+      const { getToken } = useAuth();
+      
+      const token = await getToken();
+      // Use token in API requests
+    }
+    ```
+  </Step>
+  
+  <Step title="Include in requests">
+    Add the token to your Authorization header as shown in the examples above
+  </Step>
+</Steps>
+
+<Info>
+Clerk automatically handles token refresh and expiration. Always get a fresh token before making API requests to ensure it hasn't expired.
+</Info>
+
+## Protected endpoints
+
+All endpoints under the `/api/v1` path require authentication:
+
+- `/api/v1/profile` - User profile
+- `/api/v1/concepts` - Concept management
+- `/api/v1/problems` - Problem tracking
+- `/api/v1/reviews` - Review queue
+- `/api/v1/metrics` - Analytics and metrics
+
+The only unprotected endpoint is `/health`, which is used for health checks.
+
+<Warning>
+Never share your JWT tokens or commit them to version control. Tokens should be treated as sensitive credentials and stored securely.
+</Warning>
+
+## Development mode
+
+For local development, the API supports a development bypass mode:
+
+```bash
+# Set environment variables
+APP_ENV=development
+TEST_USER_ID=user_test123
+
+# Use dev token
+curl https://api.algomind.pro/api/v1/profile \
+  -H "Authorization: Bearer dev"
+```
+
+When `APP_ENV=development` and the token is exactly `"dev"`, the middleware skips Clerk verification and uses the `TEST_USER_ID` from environment variables.
+
+<Warning>
+Development mode should **never** be enabled in production. It bypasses all security checks and should only be used in local development environments.
+</Warning>
+
+## Best practices
+
+Follow these best practices for secure API authentication:
+
+1. **Always use HTTPS** - Never send JWT tokens over unencrypted connections
+2. **Get fresh tokens** - Request a new token before each API call to avoid expiration
+3. **Handle 401 errors** - Implement proper error handling for authentication failures
+4. **Store tokens securely** - Use secure storage mechanisms appropriate for your platform
+5. **Don't log tokens** - Avoid logging full JWT tokens in application logs
+6. **Implement retry logic** - Retry with a fresh token if you receive a 401 response
+
+## Example: Complete authenticated request
+
+Here's a complete example showing how to make an authenticated request to create a concept:
+
+<CodeGroup>
+
+```javascript Next.js
+import { useAuth } from '@clerk/nextjs';
+
+export default function CreateConcept() {
+  const { getToken } = useAuth();
+
+  async function createConcept(conceptData) {
+    try {
+      // Get fresh token
+      const token = await getToken();
+      
+      // Make authenticated request
+      const response = await fetch('https://api.algomind.pro/api/v1/concepts', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(conceptData)
+      });
+
+      if (response.status === 401) {
+        // Handle authentication error
+        throw new Error('Authentication failed. Please sign in again.');
+      }
+
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error('Failed to create concept:', error);
+      throw error;
+    }
+  }
+
+  return (
+    // Your component JSX
+  );
+}
+```
+
+```python Python
+import requests
+from typing import Dict, Any
+
+class AlgomindClient:
+    def __init__(self, base_url: str, get_token_func):
+        self.base_url = base_url
+        self.get_token = get_token_func
+    
+    def create_concept(self, concept_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a new concept with authentication."""
+        token = self.get_token()
+        
+        headers = {
+            'Authorization': f'Bearer {token}',
+            'Content-Type': 'application/json'
+        }
+        
+        response = requests.post(
+            f'{self.base_url}/api/v1/concepts',
+            json=concept_data,
+            headers=headers
+        )
+        
+        if response.status_code == 401:
+            raise Exception('Authentication failed. Please sign in again.')
+        
+        response.raise_for_status()
+        return response.json()
+
+# Usage
+client = AlgomindClient('https://api.algomind.pro', your_token_function)
+result = client.create_concept({
+    'title': 'Binary Search',
+    'description': 'Efficient search algorithm',
+    'folder_id': None
+})
+```
+
+</CodeGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Problems API" icon="code" href="/api/problems">
+    Create and manage problems
+  </Card>
+  <Card title="Reviews API" icon="rotate" href="/api/reviews">
+    Log review results and retrieve queue
+  </Card>
+  <Card title="Concepts API" icon="book" href="/api/concepts">
+    Fetch algorithm concepts
+  </Card>
+  <Card title="Metrics API" icon="chart-line" href="/api/metrics">
+    Get dashboard and mastery metrics
+  </Card>
+</CardGroup>

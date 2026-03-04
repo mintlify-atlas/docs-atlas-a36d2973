@@ -1,0 +1,297 @@
+---
+title: Local setup
+description: Set up Algomind locally for development with Node.js, Go, and PostgreSQL
+---
+
+## Prerequisites
+
+Before setting up Algomind locally, ensure you have the following installed:
+
+<Steps>
+  <Step title="Node.js 20">
+    Download and install Node.js 20 from [nodejs.org](https://nodejs.org/) or use a version manager like [nvm](https://github.com/nvm-sh/nvm).
+    
+    ```bash
+    node --version  # Should be v20.x.x
+    ```
+  </Step>
+
+  <Step title="Go 1.24">
+    Install Go 1.24 from [go.dev](https://go.dev/dl/) or use a version manager.
+    
+    ```bash
+    go version  # Should be go1.24.x
+    ```
+  </Step>
+
+  <Step title="PostgreSQL 15">
+    Install PostgreSQL 15 from [postgresql.org](https://www.postgresql.org/download/) or use Docker.
+    
+    ```bash
+    psql --version  # Should be PostgreSQL 15.x
+    ```
+    
+    <Info>
+      If using Docker: `docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres:15-alpine`
+    </Info>
+  </Step>
+
+  <Step title="golang-migrate CLI">
+    Install the migration tool for running database migrations.
+    
+    ```bash
+    # macOS
+    brew install golang-migrate
+    
+    # Linux
+    curl -L https://github.com/golang-migrate/migrate/releases/latest/download/migrate.linux-amd64.tar.gz | tar xvz
+    sudo mv migrate /usr/local/bin/
+    
+    # Verify installation
+    migrate -version
+    ```
+  </Step>
+</Steps>
+
+## Clone the repository
+
+Clone the Algomind repository and navigate to the project directory:
+
+```bash
+git clone https://github.com/yourusername/algomind.git
+cd algomind
+```
+
+The repository contains two main directories:
+- `algomind-frontend/` - Next.js 15 application
+- `algomind-backend/` - Go Echo v4 API server
+
+## Database setup
+
+Create a PostgreSQL database for local development:
+
+<Steps>
+  <Step title="Create database">
+    ```bash
+    createdb algomind_dev
+    ```
+    
+    Or using psql:
+    ```sql
+    psql -U postgres
+    CREATE DATABASE algomind_dev;
+    \q
+    ```
+  </Step>
+
+  <Step title="Set DATABASE_URL">
+    Note your database connection string. You'll need this for the backend configuration:
+    
+    ```bash
+    postgresql://postgres:postgres@localhost:5432/algomind_dev?sslmode=disable
+    ```
+  </Step>
+</Steps>
+
+<Warning>
+  Make sure PostgreSQL is running before proceeding to migrations.
+</Warning>
+
+## Backend setup
+
+Set up the Go backend API server:
+
+<Steps>
+  <Step title="Navigate to backend directory">
+    ```bash
+    cd algomind-backend
+    ```
+  </Step>
+
+  <Step title="Create .env file">
+    Create a `.env` file with your configuration:
+    
+    ```bash .env
+    DATABASE_URL=postgresql://postgres:postgres@localhost:5432/algomind_dev?sslmode=disable
+    CLERK_SECRET_KEY=sk_test_your_clerk_secret_key_here
+    PORT=8080
+    ```
+    
+    <Info>
+      Get your Clerk secret key from the [Clerk Dashboard](https://dashboard.clerk.com) under API Keys.
+    </Info>
+  </Step>
+
+  <Step title="Install Go dependencies">
+    ```bash
+    go mod download
+    ```
+    
+    Key dependencies installed:
+    - `github.com/labstack/echo/v4` - Web framework
+    - `github.com/clerk/clerk-sdk-go/v2` - Authentication
+    - `github.com/jackc/pgx/v5` - PostgreSQL driver
+    - `github.com/rs/zerolog` - Structured logging
+  </Step>
+
+  <Step title="Run database migrations">
+    ```bash
+    migrate -path ./migrations -database "$DATABASE_URL" up
+    ```
+    
+    This creates all tables: `users`, `concepts`, `problems`, `review_states`, `review_logs`, `concept_folders`, and `concept_folder_items`.
+  </Step>
+
+  <Step title="Start the backend server">
+    ```bash
+    go run ./cmd/api/main.go
+    ```
+    
+    The API server will start on `http://localhost:8080`. You should see:
+    ```
+    {"level":"info","time":"...","message":"Server started on :8080"}
+    ```
+  </Step>
+</Steps>
+
+## Frontend setup
+
+Set up the Next.js frontend application:
+
+<Steps>
+  <Step title="Navigate to frontend directory">
+    ```bash
+    cd ../algomind-frontend
+    ```
+  </Step>
+
+  <Step title="Create .env.local file">
+    Create a `.env.local` file with your Clerk configuration:
+    
+    ```bash .env.local
+    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_your_clerk_publishable_key
+    CLERK_SECRET_KEY=sk_test_your_clerk_secret_key
+    NEXT_PUBLIC_SITE_URL=http://localhost:3000
+    NEXT_PUBLIC_API_URL=http://localhost:8080
+    NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
+    NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
+    NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL=/dashboard
+    NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL=/dashboard
+    ```
+    
+    <Info>
+      Get your Clerk publishable key from the [Clerk Dashboard](https://dashboard.clerk.com) under API Keys.
+    </Info>
+  </Step>
+
+  <Step title="Install npm dependencies">
+    ```bash
+    npm install
+    ```
+    
+    Key dependencies installed:
+    - `next@16.0.1` - React framework
+    - `@clerk/nextjs@^6.36.2` - Authentication
+    - `@tanstack/react-query@^5.90.12` - Data fetching
+    - `axios@^1.13.2` - HTTP client
+    - shadcn/ui components and Tailwind CSS
+  </Step>
+
+  <Step title="Start the development server">
+    ```bash
+    npm run dev
+    ```
+    
+    The frontend will start on `http://localhost:3000`. Open this URL in your browser.
+  </Step>
+</Steps>
+
+## Verify installation
+
+Confirm everything is working:
+
+<Accordion title="Check backend health">
+  ```bash
+  curl http://localhost:8080/health
+  ```
+  
+  Expected response:
+  ```json
+  {"status":"ok"}
+  ```
+</Accordion>
+
+<Accordion title="Check frontend">
+  1. Navigate to `http://localhost:3000`
+  2. You should see the Algomind landing page
+  3. Click "Sign Up" and create a test account
+  4. After sign-up, you should be redirected to the dashboard
+</Accordion>
+
+<Accordion title="Check database">
+  ```bash
+  psql -U postgres -d algomind_dev -c "\dt"
+  ```
+  
+  You should see 7 tables listed:
+  - `users`
+  - `concepts`
+  - `problems`
+  - `review_states`
+  - `review_logs`
+  - `concept_folders`
+  - `concept_folder_items`
+</Accordion>
+
+## Development workflow
+
+<Card title="Running both services" icon="rocket">
+  Open two terminal windows:
+  
+  **Terminal 1 - Backend:**
+  ```bash
+  cd algomind-backend
+  go run ./cmd/api/main.go
+  ```
+  
+  **Terminal 2 - Frontend:**
+  ```bash
+  cd algomind-frontend
+  npm run dev
+  ```
+</Card>
+
+## Troubleshooting
+
+<Accordion title="Migration errors">
+  If migrations fail, check:
+  - PostgreSQL is running: `pg_isready`
+  - DATABASE_URL is correct in `.env`
+  - Database exists: `psql -l | grep algomind_dev`
+  
+  To reset migrations:
+  ```bash
+  migrate -path ./migrations -database "$DATABASE_URL" down
+  migrate -path ./migrations -database "$DATABASE_URL" up
+  ```
+</Accordion>
+
+<Accordion title="Backend won't start">
+  Common issues:
+  - Port 8080 already in use: `lsof -i :8080`
+  - Missing CLERK_SECRET_KEY in `.env`
+  - Database connection failed - verify PostgreSQL is running
+</Accordion>
+
+<Accordion title="Frontend build errors">
+  Try:
+  ```bash
+  rm -rf node_modules .next
+  npm install
+  npm run dev
+  ```
+</Accordion>
+
+<Note>
+  For production deployment instructions, see the [Deployment guide](/development/deployment).
+</Note>

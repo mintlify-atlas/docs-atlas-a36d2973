@@ -1,0 +1,214 @@
+---
+title: Review endpoints
+description: Retrieve review queue items and log review results with spaced repetition algorithm
+---
+
+## Get review queue
+
+<CodeGroup>
+```bash cURL
+curl -X GET https://api.algomind.app/api/v1/reviews/queue \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+</CodeGroup>
+
+<ResponseExample>
+```json Response
+[
+  {
+    "entity_type": "problem",
+    "entity_id": 42,
+    "next_review_at": "2024-03-04T10:30:00Z",
+    "title": "Two Sum",
+    "difficulty": "EASY",
+    "summary": "Find two numbers that add up to target",
+    "description": "Given an array of integers...",
+    "answer": "def twoSum(nums, target): ...",
+    "answer_language": "python",
+    "hints": "Use a hash map"
+  },
+  {
+    "entity_type": "concept",
+    "entity_id": 5,
+    "next_review_at": "2024-03-04T11:00:00Z",
+    "concept_title": "Binary Search",
+    "content": "Binary search is an efficient algorithm..."
+  }
+]
+```
+</ResponseExample>
+
+### Endpoint
+
+<ParamField path="method" type="string">
+  GET
+</ParamField>
+
+<ParamField path="endpoint" type="string">
+  /api/v1/reviews/queue
+</ParamField>
+
+### Response
+
+Returns an array of review queue items due for review (where `next_review_at <= NOW()`), limited to 50 items, ordered by `next_review_at` ascending.
+
+<ResponseField name="entity_type" type="string">
+  The type of entity to review. Either `"problem"` or `"concept"`.
+</ResponseField>
+
+<ResponseField name="entity_id" type="integer">
+  The unique identifier of the problem or concept.
+</ResponseField>
+
+<ResponseField name="next_review_at" type="string">
+  ISO 8601 timestamp of when this item is scheduled for review.
+</ResponseField>
+
+<Expandable title="Problem fields (when entity_type is 'problem')">
+  <ResponseField name="title" type="string">
+    The title of the problem.
+  </ResponseField>
+
+  <ResponseField name="difficulty" type="string">
+    The difficulty level: `EASY`, `MEDIUM`, or `HARD`.
+  </ResponseField>
+
+  <ResponseField name="summary" type="string">
+    Brief summary of the problem.
+  </ResponseField>
+
+  <ResponseField name="description" type="string">
+    Full problem description.
+  </ResponseField>
+
+  <ResponseField name="answer" type="string">
+    The solution code or explanation.
+  </ResponseField>
+
+  <ResponseField name="answer_language" type="string">
+    Programming language of the answer.
+  </ResponseField>
+
+  <ResponseField name="hints" type="string">
+    Hints for solving the problem.
+  </ResponseField>
+</Expandable>
+
+<Expandable title="Concept fields (when entity_type is 'concept')">
+  <ResponseField name="concept_title" type="string">
+    The title of the concept.
+  </ResponseField>
+
+  <ResponseField name="content" type="string">
+    The full content/explanation of the concept.
+  </ResponseField>
+</Expandable>
+
+### Status codes
+
+<ResponseField name="200" type="OK">
+  Queue successfully retrieved.
+</ResponseField>
+
+<ResponseField name="500" type="Internal Server Error">
+  Failed to fetch review queue.
+</ResponseField>
+
+---
+
+## Log review result
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api.algomind.app/api/v1/reviews/problem/42/log \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -d '{
+    "rating": "GOOD"
+  }'
+```
+</CodeGroup>
+
+<ResponseExample>
+```json Response
+{
+  "message": "review logged",
+  "next_review": "2024-03-07T10:30:00Z"
+}
+```
+</ResponseExample>
+
+### Endpoint
+
+<ParamField path="method" type="string">
+  POST
+</ParamField>
+
+<ParamField path="endpoint" type="string">
+  /api/v1/reviews/:entity_type/:entity_id/log
+</ParamField>
+
+### Path parameters
+
+<ParamField path="entity_type" type="string" required>
+  The type of entity being reviewed. Must be either `problem` or `concept`.
+</ParamField>
+
+<ParamField path="entity_id" type="integer" required>
+  The unique identifier of the problem or concept being reviewed.
+</ParamField>
+
+### Request body
+
+<ParamField body="rating" type="string" required>
+  Your performance rating for this review. Must be one of:
+  - `AGAIN` - Completely forgot, need to review again
+  - `HARD` - Remembered with difficulty
+  - `GOOD` - Remembered correctly with some effort
+  - `EASY` - Remembered easily
+</ParamField>
+
+### Response
+
+<ResponseField name="message" type="string">
+  Confirmation message (always "review logged").
+</ResponseField>
+
+<ResponseField name="next_review" type="string">
+  ISO 8601 timestamp of when this item is next scheduled for review based on the spaced repetition algorithm.
+</ResponseField>
+
+<Note>
+  When logging a review, the system:
+  1. Calculates the next review date using the spaced repetition algorithm
+  2. Updates the review state (interval, ease factor, streak)
+  3. Records the review in the review logs
+  4. Updates the user's daily streak
+  5. If a problem is rated `AGAIN`, the parent concept is also reset to be reviewed immediately
+</Note>
+
+<Warning>
+  The spaced repetition algorithm adjusts future review intervals based on your rating:
+  - `EASY` increases the interval significantly
+  - `GOOD` moderately increases the interval
+  - `HARD` slightly increases or maintains the interval
+  - `AGAIN` resets the interval to 0 (review immediately)
+</Warning>
+
+### Status codes
+
+<ResponseField name="200" type="OK">
+  Review successfully logged.
+</ResponseField>
+
+<ResponseField name="400" type="Bad Request">
+  Invalid rating value or malformed request.
+</ResponseField>
+
+<ResponseField name="404" type="Not Found">
+  Review state not found for the specified entity.
+</ResponseField>
+
+<ResponseField name="500" type="Internal Server Error">
+  Failed to update review state or log review.
+</ResponseField>

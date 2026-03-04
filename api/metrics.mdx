@@ -1,0 +1,253 @@
+---
+title: Metrics endpoints
+description: Retrieve dashboard statistics, recall quality over time, and topic mastery analytics
+---
+
+## Get dashboard metrics
+
+<CodeGroup>
+```bash cURL
+curl -X GET https://api.algomind.app/api/v1/metrics/dashboard \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+</CodeGroup>
+
+<ResponseExample>
+```json Response
+{
+  "due_count": 12,
+  "current_streak": 7,
+  "longest_streak": 21,
+  "reviews_today": 5,
+  "total_problems": 43
+}
+```
+</ResponseExample>
+
+### Endpoint
+
+<ParamField path="method" type="string">
+  GET
+</ParamField>
+
+<ParamField path="endpoint" type="string">
+  /api/v1/metrics/dashboard
+</ParamField>
+
+### Response
+
+<ResponseField name="due_count" type="integer">
+  Number of items (problems and concepts) currently due for review.
+</ResponseField>
+
+<ResponseField name="current_streak" type="integer">
+  The user's current consecutive days streak of completing reviews.
+</ResponseField>
+
+<ResponseField name="longest_streak" type="integer">
+  The user's all-time longest consecutive days streak.
+</ResponseField>
+
+<ResponseField name="reviews_today" type="integer">
+  Number of reviews completed today.
+</ResponseField>
+
+<ResponseField name="total_problems" type="integer">
+  Total number of problems created by the user.
+</ResponseField>
+
+### Status codes
+
+<ResponseField name="200" type="OK">
+  Metrics successfully retrieved.
+</ResponseField>
+
+<ResponseField name="500" type="Internal Server Error">
+  Failed to fetch dashboard metrics.
+</ResponseField>
+
+---
+
+## Get recall quality
+
+<CodeGroup>
+```bash cURL
+curl -X GET "https://api.algomind.app/api/v1/metrics/recall?days=30" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+</CodeGroup>
+
+<ResponseExample>
+```json Response
+[
+  {
+    "date": "2024-03-01T00:00:00Z",
+    "total_reviews": 8,
+    "successful_reviews": 6,
+    "recall_rate": 75.0
+  },
+  {
+    "date": "2024-03-02T00:00:00Z",
+    "total_reviews": 12,
+    "successful_reviews": 10,
+    "recall_rate": 83.3
+  },
+  {
+    "date": "2024-03-03T00:00:00Z",
+    "total_reviews": 5,
+    "successful_reviews": 5,
+    "recall_rate": 100.0
+  }
+]
+```
+</ResponseExample>
+
+### Endpoint
+
+<ParamField path="method" type="string">
+  GET
+</ParamField>
+
+<ParamField path="endpoint" type="string">
+  /api/v1/metrics/recall
+</ParamField>
+
+### Query parameters
+
+<ParamField query="days" type="integer" default="7">
+  Number of days to retrieve recall data for. Must be between 1 and 90. Defaults to 7 if not specified or invalid.
+</ParamField>
+
+### Response
+
+Returns an array of daily recall quality data points, ordered by date ascending.
+
+<ResponseField name="date" type="string">
+  ISO 8601 date of the data point.
+</ResponseField>
+
+<ResponseField name="total_reviews" type="integer">
+  Total number of reviews completed on this date.
+</ResponseField>
+
+<ResponseField name="successful_reviews" type="integer">
+  Number of reviews rated as `GOOD` or `EASY` on this date.
+</ResponseField>
+
+<ResponseField name="recall_rate" type="number">
+  Percentage of successful reviews out of total reviews, rounded to 1 decimal place (0-100).
+</ResponseField>
+
+<Note>
+  A review is considered successful if rated as `GOOD` or `EASY`. Ratings of `HARD` or `AGAIN` are not counted as successful.
+</Note>
+
+### Status codes
+
+<ResponseField name="200" type="OK">
+  Recall quality data successfully retrieved.
+</ResponseField>
+
+<ResponseField name="500" type="Internal Server Error">
+  Failed to fetch recall quality data.
+</ResponseField>
+
+---
+
+## Get topic mastery
+
+<CodeGroup>
+```bash cURL
+curl -X GET https://api.algomind.app/api/v1/metrics/mastery \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+</CodeGroup>
+
+<ResponseExample>
+```json Response
+[
+  {
+    "concept_id": 3,
+    "concept_title": "Dynamic Programming",
+    "problem_count": 15,
+    "avg_ease": 2.8,
+    "avg_interval": 12.5,
+    "retention_rate": 86.7,
+    "mastery_score": 78
+  },
+  {
+    "concept_id": 1,
+    "concept_title": "Arrays",
+    "problem_count": 8,
+    "avg_ease": 2.5,
+    "avg_interval": 8.0,
+    "retention_rate": 75.0,
+    "mastery_score": 65
+  }
+]
+```
+</ResponseExample>
+
+### Endpoint
+
+<ParamField path="method" type="string">
+  GET
+</ParamField>
+
+<ParamField path="endpoint" type="string">
+  /api/v1/metrics/mastery
+</ParamField>
+
+### Response
+
+Returns an array of concept mastery analytics, ordered by mastery score descending. Only includes concepts that have at least one associated problem.
+
+<ResponseField name="concept_id" type="integer">
+  The unique identifier of the concept.
+</ResponseField>
+
+<ResponseField name="concept_title" type="string">
+  The title of the concept.
+</ResponseField>
+
+<ResponseField name="problem_count" type="integer">
+  Number of problems associated with this concept.
+</ResponseField>
+
+<ResponseField name="avg_ease" type="number">
+  Average ease factor across all problems in this concept, rounded to 2 decimal places. Higher values indicate easier recall.
+</ResponseField>
+
+<ResponseField name="avg_interval" type="number">
+  Average review interval in days across all problems in this concept, rounded to 1 decimal place.
+</ResponseField>
+
+<ResponseField name="retention_rate" type="number">
+  Percentage of successful reviews (`GOOD` or `EASY`) for problems in this concept, rounded to 1 decimal place (0-100).
+</ResponseField>
+
+<ResponseField name="mastery_score" type="integer">
+  Composite mastery score (0-100) calculated as:
+  - 50% retention rate
+  - 30% normalized ease factor (capped at 3.0)
+  - 20% normalized interval (capped at 30 days)
+  
+  Higher scores indicate better mastery of the concept.
+</ResponseField>
+
+<Note>
+  The mastery score provides a holistic view of how well you've learned a concept, combining:
+  - **Retention rate**: How often you correctly recall problems
+  - **Ease factor**: How easy it is for you to recall problems
+  - **Interval**: How long you can go between reviews without forgetting
+</Note>
+
+### Status codes
+
+<ResponseField name="200" type="OK">
+  Topic mastery data successfully retrieved.
+</ResponseField>
+
+<ResponseField name="500" type="Internal Server Error">
+  Failed to fetch topic mastery data.
+</ResponseField>

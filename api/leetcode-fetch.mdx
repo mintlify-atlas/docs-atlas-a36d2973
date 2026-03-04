@@ -1,0 +1,98 @@
+---
+title: Fetch LeetCode problem
+description: Fetch problem details from LeetCode by URL to automatically populate problem fields
+---
+
+## Fetch LeetCode problem
+
+<CodeGroup>
+```bash cURL
+curl -X GET "https://api.algomind.app/api/v1/leetcode/fetch?url=https://leetcode.com/problems/two-sum/" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+</CodeGroup>
+
+<ResponseExample>
+```json Response
+{
+  "title": "Two Sum",
+  "difficulty": "Easy",
+  "description": "<p>Given an array of integers <code>nums</code> and an integer <code>target</code>, return <em>indices of the two numbers such that they add up to <code>target</code></em>.</p>\n\n<p>You may assume that each input would have <strong><em>exactly</em> one solution</strong>, and you may not use the <em>same</em> element twice.</p>\n\n<p>You can return the answer in any order.</p>",
+  "tags": [
+    "Array",
+    "Hash Table"
+  ]
+}
+```
+</ResponseExample>
+
+### Endpoint
+
+<ParamField path="method" type="string">
+  GET
+</ParamField>
+
+<ParamField path="endpoint" type="string">
+  /api/v1/leetcode/fetch
+</ParamField>
+
+### Query parameters
+
+<ParamField query="url" type="string" required>
+  The full LeetCode problem URL (e.g., `https://leetcode.com/problems/two-sum/`). Must be a valid LeetCode URL containing `/problems/[problem-slug]/`.
+</ParamField>
+
+### Response
+
+<ResponseField name="title" type="string">
+  The title of the LeetCode problem.
+</ResponseField>
+
+<ResponseField name="difficulty" type="string">
+  The difficulty level of the problem: `Easy`, `Medium`, or `Hard`.
+</ResponseField>
+
+<ResponseField name="description" type="string">
+  The full problem description in HTML format, including constraints and examples.
+</ResponseField>
+
+<ResponseField name="tags" type="array">
+  Array of topic tags associated with the problem (e.g., `["Array", "Hash Table", "Dynamic Programming"]`).
+</ResponseField>
+
+<Note>
+  This endpoint fetches problem data from a third-party LeetCode API (`alfa-leetcode-api.onrender.com`). Use the returned data to automatically populate fields when creating a new problem via the [Create problem](/api/problems) endpoint.
+</Note>
+
+<Warning>
+  The `difficulty` value returned from this endpoint uses title case (`Easy`, `Medium`, `Hard`), but the Create problem endpoint expects uppercase (`EASY`, `MEDIUM`, `HARD`). Make sure to transform the difficulty value before submitting.
+</Warning>
+
+### Status codes
+
+<ResponseField name="200" type="OK">
+  Problem data successfully fetched.
+</ResponseField>
+
+<ResponseField name="400" type="Bad Request">
+  - Missing `url` query parameter
+  - Invalid URL format
+  - URL is not a LeetCode URL
+  - Could not extract problem slug from URL
+</ResponseField>
+
+<ResponseField name="404" type="Not Found">
+  Problem not found on LeetCode (invalid problem slug or problem doesn't exist).
+</ResponseField>
+
+<ResponseField name="500" type="Internal Server Error">
+  Failed to fetch from LeetCode API or parse the response.
+</ResponseField>
+
+### Example usage workflow
+
+1. User provides a LeetCode URL
+2. Call this endpoint to fetch problem details
+3. Use the returned `title`, `difficulty`, and `description` to pre-fill the Create problem form
+4. User adds their solution in the `answer` field
+5. Submit to the [Create problem](/api/problems) endpoint

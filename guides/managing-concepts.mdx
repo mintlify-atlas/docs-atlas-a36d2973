@@ -1,0 +1,316 @@
+---
+title: Managing concepts
+description: Working with concepts to organize your learning by topic
+---
+
+Concepts are the building blocks of your Algomind library. They represent algorithmic patterns, data structures, or problem-solving techniques that you practice through multiple problems.
+
+## Understanding concepts
+
+Each concept in Algomind:
+
+- **Groups related problems** by technique or pattern
+- **Tracks mastery independently** using spaced repetition
+- **Can be reviewed directly** as flashcard-style knowledge checks
+- **Cascades with problem performance** (failing problems resets the concept)
+
+<Info>
+  Concepts serve dual purposes: they organize your library AND they're reviewable entities with their own SRS scheduling.
+</Info>
+
+## Concept structure
+
+Concepts are stored with these fields:
+
+```typescript
+{
+  id: number
+  user_id: string | null          // null for global concepts
+  base_concept_id: number | null  // for customized versions
+  title: string                   // e.g., "Two Pointers"
+  description: string | null      // brief explanation
+  content: string                 // detailed notes or explanation
+  created_at: string
+}
+```
+
+### Global vs. user concepts
+
+- **Global concepts** (`user_id = null`): Shared templates available to all users
+- **User concepts** (`user_id` set): Personal concepts you create
+- **Customized concepts** (`base_concept_id` set): Modified versions of global concepts
+
+<Tip>
+  When you customize a global concept, the system creates a copy with your changes while preserving the original.
+</Tip>
+
+## Viewing concepts
+
+Access your concept library to see all available concepts and their organization.
+
+### Concept list
+
+The concept list shows:
+
+- **Title**: Name of the concept
+- **Description**: Short explanation
+- **Problem count**: How many problems use this concept
+- **Mastery metrics**: Current performance indicators
+
+<Accordion title="API details">
+  Concepts are fetched via:
+  ```
+  GET /concepts
+  ```
+
+  This returns all concepts where `user_id IS NULL` (global) OR `user_id = {current_user}` (personal). The query uses a 10-minute stale time for performance.
+</Accordion>
+
+## Organizing with folders
+
+Concepts can be organized into folders for better navigation.
+
+### Folder structure
+
+Folders support:
+
+- **Hierarchical organization** via `parent_folder_id`
+- **Custom sort order** with `sort_order` field
+- **Flexible assignment** (concepts can move between folders)
+
+```typescript
+type ConceptFolder = {
+  id: number
+  user_id: string
+  name: string
+  parent_folder_id: number | null  // null for root folders
+  sort_order: number
+  created_at: string
+}
+```
+
+### Folder operations
+
+<Steps>
+  <Step title="Create a folder">
+    Use the "New Folder" button or API:
+    ```
+    POST /concept-folders
+    ```
+
+    Payload:
+    ```json
+    {
+      "name": "Advanced Algorithms",
+      "parent_folder_id": null  // or parent folder ID
+    }
+    ```
+  </Step>
+
+  <Step title="Assign concepts to folders">
+    Drag concepts into folders or use:
+    ```
+    PUT /concept-folder-items
+    ```
+
+    Payload:
+    ```json
+    {
+      "concept_id": 42,
+      "folder_id": 7
+    }
+    ```
+  </Step>
+
+  <Step title="Remove from folder">
+    Unassign a concept:
+    ```
+    DELETE /concept-folder-items/{concept_id}
+    ```
+
+    This removes the concept from its current folder without deleting the concept itself.
+  </Step>
+</Steps>
+
+<Info>
+  The folder system uses a separate `concept_folder_items` table to track assignments, allowing concepts to be easily moved between folders.
+</Info>
+
+## Viewing concept details
+
+Click on a concept to see:
+
+### Content and notes
+The `content` field contains your detailed notes about the concept. This might include:
+
+- Algorithm explanation
+- Complexity analysis
+- Common variations
+- Visual diagrams or examples
+
+### Linked problems
+See all problems associated with this concept. This helps you:
+
+- Review related problems together
+- Identify patterns across similar challenges
+- Track which problems you've mastered
+
+### Mastery metrics
+View concept-level statistics:
+
+- **Average ease factor**: How confident you are (higher is better)
+- **Average interval**: How long between reviews (longer indicates mastery)
+- **Retention rate**: Percentage of successful reviews
+- **Mastery score**: Composite score (0-100) combining all metrics
+
+<Accordion title="Mastery score calculation">
+  The mastery score is computed using:
+  ```
+  mastery_score = 
+    (retention_rate * 0.5) +
+    (normalized_ease * 0.3) +
+    (normalized_interval * 0.2)
+  ```
+
+  Where:
+  - `normalized_ease` = `min(ease_factor, 3.0) / 3.0 * 100`
+  - `normalized_interval` = `min(avg_interval, 30) / 30.0 * 100`
+
+  This weights retention most heavily (50%), followed by ease (30%) and interval length (20%).
+</Accordion>
+
+## Admin features for concepts
+
+If you have access to concept management, you can perform these operations:
+
+### Create new concepts
+
+<Steps>
+  <Step title="Click 'New Concept'">
+    Access the concept creation form.
+  </Step>
+
+  <Step title="Fill in details">
+    Required fields:
+    - **Title**: Name of the concept
+    - **Description**: Brief explanation (optional but recommended)
+    - **Content**: Detailed notes, explanation, or study material
+  </Step>
+
+  <Step title="Save">
+    The API call:
+    ```
+    POST /concepts
+    ```
+
+    Payload:
+    ```json
+    {
+      "title": "Binary Search Variations",
+      "description": "Techniques for modified binary search",
+      "content": "# Binary Search Variations\n\n..."
+    }
+    ```
+  </Step>
+</Steps>
+
+### Update existing concepts
+
+Edit any concept you've created (or customize global ones):
+
+```
+PUT /concepts/{id}
+```
+
+Same payload as creation. This updates the concept in place.
+
+<Warning>
+  Editing a global concept (that you customized) only affects your copy. The base concept remains unchanged for other users.
+</Warning>
+
+### Delete concepts
+
+Remove concepts you no longer need:
+
+```
+DELETE /concepts/{id}
+```
+
+<Warning>
+  Deleting a concept also:
+  - Removes it from any folders
+  - May affect problems linked to it (depending on cascade rules)
+  - Cannot be undone
+</Warning>
+
+### Reset concept progress
+
+If you want to start fresh with a concept's review schedule:
+
+```
+POST /concepts/{id}/reset
+```
+
+This resets the SRS state (interval, ease factor, streak) without deleting the concept content.
+
+<Tip>
+  Use reset when you've taken a long break and want to relearn a concept from scratch.
+</Tip>
+
+## Concept review workflow
+
+Concepts appear in your review queue just like problems:
+
+1. **Due concepts** show up based on `next_review_at`
+2. **Review the content** (definitions, patterns, key insights)
+3. **Rate your recall** (Again / Hard / Good / Easy)
+4. **SRS schedules next review** based on your rating
+
+<Info>
+  When reviewing concepts, the `content` field is shown instead of a problem description. Rate based on how well you understand and can recall the concept.
+</Info>
+
+## Best practices
+
+<CardGroup cols={2}>
+  <Card title="One concept per technique" icon="bullseye">
+    Keep concepts focused on a single pattern or algorithm. "Two Pointers" is better than "Array Techniques."
+  </Card>
+
+  <Card title="Add multiple problems per concept" icon="list">
+    Link 3-5+ problems to each concept to practice variations. This builds pattern recognition.
+  </Card>
+
+  <Card title="Use folders for categories" icon="folder-tree">
+    Organize concepts into folders like "Graph Algorithms," "Dynamic Programming," etc. for easy navigation.
+  </Card>
+
+  <Card title="Review concepts directly" icon="brain">
+    Don't just review problems. Periodically review the concepts themselves to strengthen theoretical understanding.
+  </Card>
+
+  <Card title="Customize global concepts" icon="pen">
+    If a global concept doesn't quite fit your learning style, customize it with your own notes and examples.
+  </Card>
+
+  <Card title="Track mastery trends" icon="chart-line">
+    Use the mastery score to identify weak areas. Concepts with low scores need more problem practice.
+  </Card>
+</CardGroup>
+
+## Concept-problem relationship
+
+Every problem **must** be linked to exactly one concept. This creates a tree structure:
+
+```
+Concept: "Binary Search"
+├── Problem: "Search Insert Position"
+├── Problem: "Find Peak Element"
+└── Problem: "Search in Rotated Array"
+```
+
+When you fail a problem (rate it "Again"), the parent concept is automatically reset. This ensures you revisit fundamentals when struggling with applications.
+
+<Info>
+  This cascading behavior is handled in the backend's `LogReview` handler. When `entity_type = 'problem'` and `rating = 'AGAIN'`, the system finds the parent concept and resets its review state.
+</Info>

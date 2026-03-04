@@ -1,0 +1,217 @@
+---
+title: LeetCode auto-fetch
+description: Automatically import problem details from LeetCode URLs into your review system
+---
+
+Algomind can automatically fetch problem metadata from LeetCode, saving you time when adding new problems to your review queue. Just paste a URL and the system pulls in all the details.
+
+## What gets fetched
+
+When you provide a LeetCode problem URL, Algomind fetches:
+
+<Steps>
+  <Step title="Problem title">
+    The official problem name (e.g., "Two Sum", "Valid Parentheses")
+  </Step>
+  
+  <Step title="Difficulty level">
+    Easy, Medium, or Hard classification
+  </Step>
+  
+  <Step title="Problem description">
+    The full problem statement including examples and constraints
+  </Step>
+  
+  <Step title="Topic tags">
+    LeetCode's categorization tags (Array, Hash Table, Dynamic Programming, etc.)
+  </Step>
+</Steps>
+
+<Info>
+  The fetched data is used to pre-fill the add problem form. You can edit any field before saving.
+</Info>
+
+## How to use it
+
+1. Navigate to **Add Problem** from the dashboard
+2. Paste a LeetCode URL in the format:
+   ```
+   https://leetcode.com/problems/two-sum/
+   https://leetcode.com/problems/valid-parentheses
+   ```
+3. Click **Fetch** or press Enter
+4. Review the auto-filled details
+5. Select a concept to link the problem to
+6. Save the problem
+
+<Tip>
+  You can paste URLs with or without trailing slashes—both formats work.
+</Tip>
+
+## API implementation
+
+Algomind uses two fetch strategies with automatic fallback:
+
+### Primary: Alfa LeetCode API
+
+The default method uses the alfa-leetcode-api proxy service:
+
+```go algomind-backend/internal/handlers/fetch_leetcode.go
+func (h *LeetCodeHandler) FetchProblem(c echo.Context) error {
+    leetcodeURL := c.QueryParam("url")
+    if leetcodeURL == "" {
+        return echo.NewHTTPError(http.StatusBadRequest, "url parameter is required")
+    }
+
+    titleSlug, err := extractTitleSlug(leetcodeURL)
+    if err != nil {
+        return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+    }
+
+    apiURL := fmt.Sprintf("https://alfa-leetcode-api.onrender.com/select?titleSlug=%s", titleSlug)
+    resp, err := http.Get(apiURL)
+    if err != nil {
+        return echo.NewHTTPError(http.StatusInternalServerError, "failed to fetch from LeetCode API")
+    }
+    defer resp.Body.Close()
+
+    if resp.StatusCode != http.StatusOK {
+        return echo.NewHTTPError(http.StatusNotFound, "problem not found on LeetCode")
+    }
+
+    var problem LeetCodeProblem
+    if err := json.NewDecoder(resp.Body).Decode(&problem); err != nil {
+        return echo.NewHTTPError(http.StatusInternalServerError, "failed to parse LeetCode response")
+    }
+
+    return c.JSON(http.StatusOK, FetchLeetCodeResponse{
+        Title:       problem.Title,
+        Difficulty:  problem.Difficulty,
+        Description: problem.Content,
+        Tags:        tags,
+    })
+}
+```
+
+### Fallback: Direct LeetCode GraphQL
+
+If the primary API fails, the system falls back to LeetCode's official GraphQL endpoint:
+
+```go algomind-backend/internal/handlers/fetch_leetcode.go
+func (h *LeetCodeHandler) FetchProblemDirectLeetCode(c echo.Context) error {
+    titleSlug, err := extractTitleSlug(urlParam)
+    if err != nil {
+        return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+    }
+
+    reqBody := graphQLFetchProblemRequest{
+        Query:     graphql.LeetCodeGraphQLQuery,
+        Variables: map[string]interface{}{"titleSlug": titleSlug},
+    }
+
+    req, err := http.NewRequest("POST", "https://leetcode.com/graphql", strings.NewReader(string(bodyBytes)))
+    req.Header.Set("Content-Type", "application/json")
+    req.Header.Set("Referer", "https://leetcode.com")
+    req.Header.Set("User-Agent", "Mozilla/5.0")
+
+    client := &http.Client{Timeout: 10 * time.Second}
+    resp, err := client.Do(req)
+    // ... handle response
+}
+```
+
+## URL parsing
+
+The system extracts the problem slug from various URL formats:
+
+```go algomind-backend/internal/handlers/fetch_leetcode.go
+func extractTitleSlug(leetcodeURL string) (string, error) {
+    parsedURL, err := url.Parse(leetcodeURL)
+    if err != nil {
+        return "", fmt.Errorf("invalid URL format")
+    }
+
+    if !strings.Contains(parsedURL.Host, "leetcode.com") {
+        return "", fmt.Errorf("not a LeetCode URL")
+    }
+    
+    re := regexp.MustCompile(`/problems/([a-z0-9-]+)/?`)
+    matches := re.FindStringSubmatch(parsedURL.Path)
+    if len(matches) < 2 {
+        return "", fmt.Errorf("could not extract problem slug from URL")
+    }
+
+    return matches[1], nil
+}
+```
+
+This function:
+- Validates the URL is from leetcode.com
+- Extracts the problem slug (e.g., "two-sum" from "/problems/two-sum/")
+- Handles both trailing slash variations
+
+<Warning>
+  The URL must be from `leetcode.com`. Regional variants (like `leetcode.cn`) are not currently supported.
+</Warning>
+
+## Error handling
+
+The fetch system handles several error scenarios:
+
+| Error | Cause | User message |
+|-------|-------|-------------|
+| **Invalid URL format** | Malformed URL string | "Invalid URL format" |
+| **Not a LeetCode URL** | URL from different domain | "Not a LeetCode URL" |
+| **Problem not found** | Slug doesn't exist on LeetCode | "Problem not found on LeetCode" |
+| **API timeout** | Service unavailable | "Failed to fetch from LeetCode API" |
+| **Parse error** | Unexpected API response format | "Failed to parse LeetCode response" |
+
+<Accordion title="What if the API is down?">
+  If both the primary API and fallback fail, you can still manually enter the problem details. The auto-fetch is a convenience feature, not a requirement.
+  
+  You can also wait a few minutes and try again—the APIs are generally reliable.
+</Accordion>
+
+## Response structure
+
+The fetched data is returned in this format:
+
+```json
+{
+  "title": "Two Sum",
+  "difficulty": "Easy",
+  "description": "Given an array of integers nums and an integer target...",
+  "tags": ["Array", "Hash Table"]
+}
+```
+
+<Note>
+  Topic tags from LeetCode are fetched but not automatically linked to concepts. You manually select which concept to link the problem to based on what you want to practice.
+</Note>
+
+## Performance considerations
+
+- **Timeout**: API requests timeout after 10 seconds
+- **No caching**: Each fetch makes a new request to ensure data is current
+- **Sequential**: Only one problem is fetched at a time (no batch operations)
+
+## Privacy and data
+
+<Info>
+  The auto-fetch feature:
+  - Does not require LeetCode authentication
+  - Only accesses public problem data
+  - Does not store your LeetCode account information
+  - Operates independently of your LeetCode profile
+</Info>
+
+## Related features
+
+<CardGroup cols={2}>
+  <Card title="Concept library" icon="book" href="/features/concept-library">
+    Learn how to organize problems by concept
+  </Card>
+  <Card title="Adding problems" icon="plus" href="/guides/adding-problems">
+    Complete guide to adding problems to your review queue
+  </Card>
+</CardGroup>
